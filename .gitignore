@@ -1,0 +1,9 @@
+node_modules/
+.orca/
+.env
+.env.*
+*.local.json
+*.log
+state/
+coverage/
+.DS_Store

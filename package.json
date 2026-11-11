@@ -1,0 +1,24 @@
+{
+  "name": "ping-inbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "build": "npm run build:vendor && orca plugin check . --json",
+    "test": "orca plugin test . --json",
+    "build:vendor": "node scripts/build-date.ts",
+    "test:package": "node scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "date-fns": "^4.4.0",
+    "date-fns-tz": "^3.2.0",
+    "zod": "^4.6.7"
+  },
+  "license": "MIT"
+}

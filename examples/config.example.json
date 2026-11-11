@@ -1,0 +1,9 @@
+{
+  "collectorCommand": [],
+  "collectorCwd": "",
+  "repositories": {},
+  "agent": "claude",
+  "timeZone": "UTC",
+  "orcaExecutable": "orca",
+  "runtimeMetadataPath": ""
+}

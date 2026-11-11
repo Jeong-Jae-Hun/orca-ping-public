@@ -1,0 +1,25 @@
+import { parseArgs } from 'node:util'
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { config, defaultState, expandHome } from './config.ts'
+import { publish } from './publish.ts'
+import { bridge } from './bridge.ts'
+import { requestCollection } from './collect.ts'
+import { homedir } from 'node:os'
+try {
+  const {values,positionals}=parseArgs({allowPositionals:true,options:{state:{type:'string'}}})
+  const state=expandHome(values.state || defaultState())
+  config(state)
+  const action=positionals[0]
+  if(action==='init'){
+    mkdirSync(state,{recursive:true,mode:0o700})
+    writeFileSync(join(state,'config.json'),JSON.stringify(config(state),null,2)+'\n',{flag:'wx',mode:0o600})
+    console.log('Created '+join(state,'config.json'))
+  }else if(action==='publish') publish(state,readFileSync(0,'utf8'))
+  else if(action==='demo') publish(state,execFileSync(process.execPath,[fileURLToPath(new URL('../examples/collector.ts',import.meta.url))],{encoding:'utf8'}))
+  else if(action==='collect') requestCollection(state,homedir())
+  else if(action==='status') console.log(JSON.stringify(bridge({action:'snapshot'},state),null,2))
+  else throw new Error('Usage: node src/cli.ts init|publish|demo|collect|status [--state /absolute/path]')
+}catch(error){ console.error(error instanceof Error ? error.message : String(error));process.exitCode=1 }

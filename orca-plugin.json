@@ -1,0 +1,104 @@
+{
+  "manifestVersion": 2,
+  "id": "ping-inbox",
+  "name": "Ping Inbox",
+  "version": "0.1.0",
+  "description": "개인 수집기의 보고와 작업 제안을 모으고, 프로젝트별 작업 세션을 이어갑니다.",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "ping-inbox",
+        "title": "Ping Inbox",
+        "icon": "bell",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "commands": [
+      {
+        "id": "ping.open",
+        "title": "Ping Inbox 열기"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "ping",
+        "text": "핑 · 연결 중",
+        "command": "ping.open"
+      }
+    ],
+    "settings": [
+      {
+        "key": "mode",
+        "title": "mode",
+        "type": "string",
+        "default": "local",
+        "description": "local 또는 ssh",
+        "enum": [
+          "local",
+          "ssh"
+        ]
+      },
+      {
+        "key": "sshHost",
+        "title": "sshHost",
+        "type": "string",
+        "default": "",
+        "description": "SSH config 호스트 별칭"
+      },
+      {
+        "key": "backendEntry",
+        "title": "backendEntry",
+        "type": "string",
+        "default": "",
+        "description": "SSH 서버의 bridge.ts 경로; 로컬은 비워 둡니다."
+      },
+      {
+        "key": "stateDirectory",
+        "title": "stateDirectory",
+        "type": "string",
+        "default": "",
+        "description": "비워 두면 기본 로컬 데이터 폴더"
+      },
+      {
+        "key": "nodeExecutable",
+        "title": "nodeExecutable",
+        "type": "string",
+        "default": "node",
+        "description": "Node.js 22.18 이상 실행 파일"
+      },
+      {
+        "key": "orcaExecutable",
+        "title": "orcaExecutable",
+        "type": "string",
+        "default": "orca",
+        "description": "데스크톱 Orca CLI 실행 파일"
+      },
+      {
+        "key": "pluginKey",
+        "title": "pluginKey",
+        "type": "string",
+        "default": "",
+        "description": "여러 사본 설치 시 플러그인 키 지정"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "storage:own"
+    },
+    {
+      "kind": "notifications:show"
+    },
+    {
+      "kind": "settings:own"
+    }
+  ],
+  "license": "MIT"
+}
