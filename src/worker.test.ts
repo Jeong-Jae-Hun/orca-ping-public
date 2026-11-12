@@ -109,3 +109,17 @@ test('이 Orca 에 워크스페이스가 없으면 열기 실패를 알린다', 
   assert.equal(host.callsOf('workspace.open').length, 0)
   await worker.deactivate()
 })
+
+test('같은 경로가 여러 호스트에 있으면 백엔드 런타임의 워크스페이스만 열고 정해지지 않으면 열지 않는다', async () => {
+  const session = { key: 'claude_1', title: '구현', state: 'working', worktree: '/w/app', updatedAt: 1 }
+  const list = { workspaces: [{ id: 'mac-app', kind: 'worktree', name: 'app', path: '/w/app', branch: null, hostId: 'mac' }, { id: 'wsl-app', kind: 'worktree', name: 'app', path: '/w/app', branch: null, hostId: 'runtime-wsl' }], truncated: false }
+  for (const [runtimeId, expected] of [['runtime-wsl', [{ workspaceId: 'wsl-app' }]], [undefined, []]] as const) {
+    const opened: Snapshot = { ...snapshot, ...(runtimeId ? { runtimeId } : {}), specs: { items: [], backlog: [], sessions: [session], checkedAt: 1 } }
+    const host = mockHost({ results: { 'statusBar.update': { ok: true }, 'workspace.list': list, 'workspace.open': { opened: true } } })
+    const worker = await mountWorker({ default: orca => activate(orca, async () => opened), deactivate }, { host })
+    const result = await worker.request('ping.action', { action: 'session-open', key: 'claude_1' }) as { error: string | null }
+    assert.deepEqual(host.callsOf('workspace.open'), expected)
+    if (!runtimeId) assert.match(result.error ?? '', /Several Orca hosts/)
+    await worker.deactivate()
+  }
+})

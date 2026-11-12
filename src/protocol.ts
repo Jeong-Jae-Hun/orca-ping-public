@@ -16,7 +16,7 @@ export type SpecSession = { key: string; title: string; state: string; worktree:
 export type Spec = { id: string; title: string; project: string; path: string; mode: 'marked' | 'auto'; updatedAt: number; summary: string; prs: SpecPr[]; steps: SpecStep[]; current: number; sessions: SpecSession[] }
 export type SpecShelf = { id: string; title: string; project: string; path: string }[]
 export type Specs = { items: Spec[]; sessions: SpecSession[]; backlog: SpecShelf; done?: SpecShelf; checkedAt: number; error?: string }
-export type Snapshot = { specs?: Specs; theory?: Theory; timeZone?: string; collectionAvailable?: boolean; batch: string; report: string; updatedAt: number; proposals: Proposal[]; collection?: Collection; judgments?: Judgment[]; savedTasks?: SavedTask[]; snoozed?: Reminder[]; reminders?: Reminder[]; sourceHealth?: SourceHealth[] }
+export type Snapshot = { runtimeId?: string; specs?: Specs; theory?: Theory; timeZone?: string; collectionAvailable?: boolean; batch: string; report: string; updatedAt: number; proposals: Proposal[]; collection?: Collection; judgments?: Judgment[]; savedTasks?: SavedTask[]; snoozed?: Reminder[]; reminders?: Reminder[]; sourceHealth?: SourceHealth[] }
 export type Request = { action: 'snapshot' | 'start' | 'dismiss' | 'collect' | 'reopen' | 'complete' | 'snooze' | 'unsnooze' | 'priority' | 'theory-read' | 'theory-note' | 'theory-next' | 'theory-preferences' | 'theory-explain' | 'spec-open' | 'spec-status' | 'session-open'; text?: string; mode?: TheoryExplanation['mode']; id?: string; preset?: 'hour' | 'tomorrow'; priority?: Priority | 'auto'; key?: string }
 export type View = { snapshot: Snapshot | null; error: string | null }
 

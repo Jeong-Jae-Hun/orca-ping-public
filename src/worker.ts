@@ -51,8 +51,12 @@ async function refresh(runtime: Runtime, input: Request = { action: 'snapshot' }
       : input.action === 'reopen' ? snapshot.savedTasks?.find(item => item.id === input.id)?.worktreePath : undefined
     if (target) {
       const { workspaces } = await orca.host.call('workspace.list', undefined)
-      const workspace = workspaces.find(item => item.path === target)
-      if (!workspace) throw new Error('Workspace is not visible in this Orca; connect the backend host first')
+      // 같은 절대 경로가 다른 호스트에도 있을 수 있다. 하나로 정해질 때만 열고, 여럿이면 백엔드 런타임으로 좁힌다.
+      const matches = workspaces.filter(item => item.path === target)
+      const narrowed = matches.length > 1 ? matches.filter(item => item.hostId !== null && item.hostId === snapshot?.runtimeId) : matches
+      if (!matches.length) throw new Error('Workspace is not visible in this Orca; connect the backend host first')
+      if (narrowed.length !== 1) throw new Error('Several Orca hosts have this workspace path; open it from the sidebar')
+      const [workspace] = narrowed
       await orca.host.call('workspace.open', { workspaceId: workspace.id })
     }
     const reminded = (await orca.storage.get('reminded') ?? {}) as Record<string, number>
