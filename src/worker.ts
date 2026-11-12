@@ -83,7 +83,7 @@ export default function activate(orca: OrcaWorkerApi, call?: Transport) {
   orca.panels.handle('ping.view', () => runtime.view)
   orca.panels.handle('ping.refresh', () => poll(runtime))
   orca.panels.handle('ping.action', async input => {
-    if (!input || !['start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority'].includes(input.action) || (input.action !== 'collect' && !/^[a-f0-9]{8}$/.test(input.id ?? ''))) throw new Error('Invalid action')
+    if (!input || !['start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority', 'theory-read', 'theory-note', 'theory-next', 'theory-preferences', 'theory-explain'].includes(input.action) || (!['collect', 'theory-preferences'].includes(input.action) && !(input.action.startsWith('theory-') ? /^[a-z0-9][a-z0-9-]{0,79}$/ : /^[a-f0-9]{8}$/).test(input.id ?? ''))) throw new Error('Invalid action')
     if (runtime.pending) await runtime.pending
     runtime.pending = refresh(runtime, input).finally(() => { runtime.pending = null })
     return runtime.pending

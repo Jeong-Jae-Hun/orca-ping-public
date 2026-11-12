@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { addDays, addHours, set, fromZonedTime, toZonedTime } from '../vendor/date.js'
 import { collectionStatus, requestCollection } from './collect.ts'
 import { sourceHealth } from './health.ts'
+import { theory } from './theory.ts'
 import { revealSession, type RevealedSession } from './session.ts'
 import { config, defaultState, runtimeEnv, expandHome } from './config.ts'
 import { parseArgs } from 'node:util'
@@ -46,7 +47,7 @@ function savedTask(id: string, record: Record): SavedTask | undefined {
 
 export function bridge(input: Request, state = defaultState(), home = homedir(), run = execute,
   reveal: (id: string) => RevealedSession = revealSession, now = Date.now()): Snapshot {
-  if (!input || !['snapshot', 'start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority'].includes(input.action)) throw new Error('Invalid action')
+  if (!input || !['snapshot', 'start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority', 'theory-read', 'theory-note', 'theory-next', 'theory-preferences', 'theory-explain'].includes(input.action)) throw new Error('Invalid action')
   const settings = config(state)
   const rows = read(join(state, 'proposals.md')).split('\n').filter(line => line.split(' | ').length >= 5)
   const proposals = rows.map(row => {
@@ -60,7 +61,7 @@ export function bridge(input: Request, state = defaultState(), home = homedir(),
   const actions = join(state, 'panel-actions')
   mkdirSync(actions, { recursive: true, mode: 0o700 })
   if (input.action === 'collect') requestCollection(state, home)
-  if (input.action !== 'snapshot' && input.action !== 'collect') {
+  if (input.action !== 'snapshot' && input.action !== 'collect' && !input.action.startsWith('theory-')) {
     if (typeof input.id !== 'string' || !/^[a-f0-9]{8}$/.test(input.id)) throw new Error('Invalid proposal ID')
     if (input.action === 'priority' && input.priority !== 'auto' && !grades.includes(input.priority ?? '')) throw new Error('Invalid priority')
     if (input.action === 'snooze' && !['hour', 'tomorrow'].includes(input.preset ?? '')) throw new Error('Invalid reminder preset')
@@ -147,7 +148,14 @@ export function bridge(input: Request, state = defaultState(), home = homedir(),
     } catch { /* 상태 조회 실패로 저장한 세션을 버리지 않는다. */ }
   }
   const reminders = [...records].flatMap(([id, record]) => record.status === 'snoozed' && record.until ? [{ id, title: record.title, url: record.url ?? '', until: record.until }] : [])
+  let learning: Snapshot['theory']
+  try { learning = theory(input, state, settings.learning) }
+  catch (error) {
+    if (input.action.startsWith('theory-')) throw error
+    learning = { history: [], remaining: 0, error: 'Learning data could not be read; check the data directory' }
+  }
   return {
+    theory: learning,
     timeZone: settings.timeZone, collectionAvailable: settings.collectorCommand.length > 0, collection: collectionStatus(state), savedTasks: tasks,
     snoozed: reminders.filter(item => item.until > now), reminders: reminders.filter(item => item.until <= now),
     sourceHealth: sourceHealth(state, now),

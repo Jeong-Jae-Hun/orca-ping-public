@@ -1,12 +1,14 @@
 import { atom, Badge, Button, Callout, Card, Collapsible, Heading, Input, Link, Markdown, plugin, read, RelativeTime, Row, Select, set, Stack, Tab, Tabs, Text, type PanelContext } from 'orca'
-import type { Judgment, Priority, Proposal, Request, SavedTask, View } from './protocol.ts'
+import type { Judgment, Priority, Proposal, Request, SavedTask, Theory, TheoryLesson, View } from './protocol.ts'
 
 const view = atom<View>({ snapshot: null, error: null })
 const busy = atom(false)
 const section = atom<string | null>('section', null, { persist: 'plugin' })
 const query = atom('')
 const visible = atom(8)
-const expanded = atom<string | null>(null)
+const theoryDrafts = atom<Record<string, string>>({})
+const learningDraft = atom<string | null>(null)
+const learningAction = atom<Request['action'] | null>(null)
 const priorities = { urgent: 0, today: 1, unknown: 2, info: 3 }
 const phaseLabels = { working: '실행 중', waiting: '대기 중', blocked: '확인 필요', done: '응답 완료', closed: '세션 연결 없음 · 대화 저장됨', unknown: '상태 확인 필요' }
 const healthLabels = { ok: '정상', failed: '실패', skipped: '건너뜀', stale: '오래됨', unknown: '미확인' }
@@ -15,15 +17,6 @@ function formatTime(at: number, timeZone = Intl.DateTimeFormat().resolvedOptions
 }
 const priorityOptions = [{ value: 'auto', label: '자동 판단' }, { value: 'urgent', label: '급함' }, { value: 'today', label: '오늘' }, { value: 'info', label: '참고' }, { value: 'unknown', label: '판단 보류' }]
 const priorityLabels = { urgent: '급함', today: '오늘', info: '참고', unknown: '판단 보류' }
-const priorityTones = { urgent: 'danger', today: 'accent', info: 'neutral', unknown: 'warning' } as const
-
-/** `리뷰 요청: owner/repo#12 제목` 을 카드 제목과 출처 줄로 나눕니다. 형식이 다르면 제목만 씁니다. */
-function splitTitle(title: string) {
-  const match = /^(?:([^:]+): )?([\w.-]+\/[\w.-]+)#(\d+)\s+([\s\S]+)$/.exec(title)
-  if (!match) return { subject: title, source: undefined }
-  const [, label, repo, number, subject] = match
-  return { subject, source: [label, `${repo} #${number}`].filter(Boolean).join(' · ') }
-}
 
 async function refresh() {
   set(busy, true)
@@ -36,16 +29,19 @@ async function refresh() {
   finally { set(busy, false) }
 }
 
-async function act(action: Request['action'], id?: string, extra: Pick<Request, 'preset' | 'priority'> = {}) {
+async function act(action: Request['action'], id?: string, extra: Pick<Request, 'preset' | 'priority' | 'text' | 'mode'> = {}) {
   set(busy, true)
+  set(learningAction, action)
   try {
-    const answer = await plugin.request('ping.action', id ? { action, id, ...extra } : { action }, { timeoutMs: 120_000 })
+    const answer = await plugin.request('ping.action', id ? { action, id, ...extra } : { action, ...extra }, { timeoutMs: 120_000 })
     set(view, answer)
+    if (action === 'theory-note' && id && !answer.error) set(theoryDrafts, { ...read(theoryDrafts), [id]: '' })
+    if (action === 'theory-preferences' && !answer.error) set(learningDraft, null)
     if (action === 'start' && !answer.error) set(section, 'progress')
     if (action === 'unsnooze' && !answer.error) set(section, answer.snapshot?.proposals.some(item => item.id === id) ? 'tasks' : 'now')
   }
   catch (error) { set(view, { ...read(view), error: String(error) }) }
-  finally { set(busy, false) }
+  finally { set(busy, false); set(learningAction, null) }
 }
 
 export function setup(ctx: PanelContext) {
@@ -74,6 +70,18 @@ function TaskActions({ id, proposal, url, priority }: { id: string; proposal?: P
   </Stack>
 }
 
+function splitTitle(title: string, repo?: string, url?: string) {
+  const match = /^(?:([^:]+): )?([\w.-]+\/[\w.-]+)#(\d+)\s+([\s\S]+)$/.exec(title)
+  if (match) {
+    const [, label, repository, number, subject] = match
+    return { subject, source: [label, `${repository} #${number}`].filter(Boolean).join(' · ') }
+  }
+  const github = url?.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/)
+  const source = github ? `${github[1]} #${github[2]}` : repo?.split('/').at(-1)
+  const kind = title.startsWith('리뷰:') ? '리뷰 요청' : title.includes(': ') ? title.split(': ')[0] : '알림'
+  return { subject: title, source: source ? `${kind} · ${source}` : undefined }
+}
+
 function ProgressTask({ task }: { task: SavedTask }) {
   const disabled = read(busy)
   return <Stack gap="sm">
@@ -87,13 +95,68 @@ function ProgressTask({ task }: { task: SavedTask }) {
   </Stack>
 }
 
+function TheoryReading({ lesson, pending, current, remaining, explanation }: { lesson: TheoryLesson; pending: boolean; current: boolean; remaining: number; explanation?: Theory['explanation'] }) {
+  const text = read(theoryDrafts)[lesson.id] ?? ''
+  return <Stack gap="md">
+    <Heading level={3}>{lesson.title}</Heading>
+    <Text muted size="xs">{lesson.readAt ? `읽음 · ${lesson.readAt}` : '읽기 전 · 날짜가 바뀌어도 이 글을 유지합니다.'}</Text>
+    <Markdown content={lesson.content} />
+    <Row gap="sm" wrap>
+      {current && !lesson.readAt && <Button size="sm" disabled={pending} onPress={() => act('theory-read', lesson.id)}>읽었어요</Button>}
+      {current && lesson.readAt && remaining > 0 && <Button size="sm" disabled={pending} onPress={() => act('theory-next', lesson.id)}>{pending && read(learningAction) === 'theory-next' ? '추천 중…' : '다음 이론 추천'}</Button>}
+      {current && <Button size="sm" variant="ghost" disabled={pending} onPress={() => act('theory-explain', lesson.id, { mode: 'foundations' })}>더 기초부터</Button>}
+      {current && <Button size="sm" variant="ghost" disabled={pending} onPress={() => act('theory-explain', lesson.id, { mode: 'counterexample' })}>반례 보기</Button>}
+    </Row>
+    {current && pending && read(learningAction) === 'theory-explain' && <Text muted size="sm">보충 설명을 준비하고 있습니다.</Text>}
+    {current && explanation?.id === lesson.id && <Stack gap="sm">
+      <Text weight="semibold">{explanation.mode === 'foundations' ? '더 기초부터' : '반례와 한계'}</Text>
+      <Markdown content={explanation.content} />
+      <Text muted size="xs">AI가 덧붙인 설명입니다. 공식 근거는 원문의 출처에서 확인하세요.</Text>
+    </Stack>}
+    {current && lesson.readAt && remaining === 0 && <Text size="sm">준비된 글을 모두 읽었습니다. 다음 학습 글을 추가하면 이어갈 수 있습니다.</Text>}
+    <Collapsible title="의견과 추천 이유">
+      <Stack gap="sm">
+        <Text size="sm">{lesson.reason}</Text>
+        {lesson.notes.map((note, index) => <Text key={index} muted size="sm">{note.replace(/^- /, '')}</Text>)}
+        <Input label="이론에 대한 내 의견" placeholder="궁금한 점이나 내 말로 설명한 내용을 남겨보세요" value={text} maxLength={600} disabled={pending}
+          onChange={value => set(theoryDrafts, { ...read(theoryDrafts), [lesson.id]: value })} />
+        <Row><Button size="sm" variant="ghost" disabled={pending || !text.trim()} onPress={() => act('theory-note', lesson.id, { text })}>학습 의견 저장</Button></Row>
+        <Text muted size="xs">의견은 다음 추천에 참고합니다. 읽음 표시는 이해도 평가가 아닙니다.</Text>
+      </Stack>
+    </Collapsible>
+  </Stack>
+}
+
+function TheoryPanel({ learning, pending }: { learning?: Theory; pending: boolean }) {
+  return <Stack gap="lg">
+    {!learning && <Text size="sm">아직 학습 프로젝트가 연결되지 않았습니다.</Text>}
+    {learning?.error && <Text size="sm">{learning.error}</Text>}
+    {learning && !learning.current && !learning.error && <Text size="sm">아직 준비된 학습 글이 없습니다.</Text>}
+    {learning?.current && <TheoryReading lesson={learning.current} pending={pending} current remaining={learning.remaining} explanation={learning.explanation} />}
+    {learning && <Collapsible title="학습 방향">
+      <Stack gap="sm">
+        <Input label="어떻게 배우고 싶나요?" placeholder="예: 정의부터 깊게, 인증과 동시성의 공식 명세도 함께" value={read(learningDraft) ?? learning.preferences ?? ''} maxLength={1200} disabled={pending} onChange={value => set(learningDraft, value)} />
+        <Text muted size="xs">글별 의견과 따로 기억하고, 다음 추천과 보충 설명에 참고합니다.</Text>
+        <Row gap="sm" wrap>
+          <Button size="sm" variant="ghost" disabled={pending || read(learningDraft) === null} onPress={() => act('theory-preferences', undefined, { text: read(learningDraft) ?? '' })}>학습 방향 저장</Button>
+          {read(learningDraft) !== null && <Button size="sm" variant="ghost" disabled={pending} onPress={() => set(learningDraft, null)}>취소</Button>}
+        </Row>
+      </Stack>
+    </Collapsible>}
+    {(learning?.history ?? []).filter(item => item.id !== learning?.current?.id).length > 0 && <Collapsible title="읽은 이론">
+      <Stack gap="lg">{learning?.history.filter(item => item.id !== learning.current?.id).map(item => <Collapsible key={item.id} title={item.title}>
+        <TheoryReading lesson={item} pending={pending} current={false} remaining={0} />
+      </Collapsible>)}</Stack>
+    </Collapsible>}
+  </Stack>
+}
+
 export default function Panel() {
   const { snapshot, error } = read(view)
   const pending = read(busy)
   const search = read(query).trim().toLocaleLowerCase()
   const proposals = [...(snapshot?.proposals ?? [])].reverse().filter(item =>
     (item.title + ' ' + item.summary + ' ' + item.repo).toLocaleLowerCase().includes(search))
-  const open = read(expanded) ?? proposals[0]?.id
   const reportSummary = snapshot?.report.trim().split('\n').at(-1) || '아직 보고가 없습니다.'
   const collecting = snapshot?.collection?.status === 'running'
   const judgments = [...(snapshot?.judgments ?? [])].sort((a, b) => priorities[a.priority] - priorities[b.priority])
@@ -106,18 +169,19 @@ export default function Panel() {
       <Heading level={2}>Ping Inbox</Heading>
       <Button size="sm" variant="ghost" disabled={pending} onPress={refresh}>{pending ? '확인 중…' : '화면 갱신'}</Button>
     </Row>
-    <Row gap="sm" wrap>
+    {read(section) !== 'theory' && <Row gap="sm" wrap>
       <Button size="sm" disabled={pending || collecting || !snapshot || snapshot.collectionAvailable === false} onPress={() => act('collect')}>{collecting ? '수집 중…' : '지금 보고 받기'}</Button>
       <Text muted size="xs">{snapshot?.collectionAvailable === false ? '설정 파일에 수집 명령을 연결하세요. README에서 시작 방법을 확인할 수 있습니다.' : '연결한 수집기로 새 보고 받기'}</Text>
-    </Row>
-    {error && <Stack gap="xs"><Text size="sm">연결을 확인한 뒤 화면 갱신을 누르세요.</Text><Text muted size="xs">{error}</Text></Stack>}
+    </Row>}
+    {error && <Stack gap="xs"><Text size="sm">요청을 완료하지 못했습니다. 아래 내용을 확인하고 다시 시도하세요.</Text><Text muted size="xs">{error}</Text></Stack>}
     {!snapshot && !error && <Text muted>알림을 가져오고 있습니다.</Text>}
     {snapshot && <Stack gap="md">
+      {read(section) !== 'theory' && <Stack gap="md">
       <Callout tone="neutral" icon="bell">
         <Stack gap="xs">
-          {snapshot.collection && <Text size="sm">{snapshot.collection.message}</Text>}
-          <Text size="sm">{reportSummary.length > 220 ? reportSummary.slice(0, 220) + '…' : reportSummary}</Text>
-          {snapshot.updatedAt > 0 && <Row gap="xs"><Text muted size="xs">마지막 보고</Text><RelativeTime at={snapshot.updatedAt} /></Row>}
+        {snapshot.collection && <Text size="sm">{snapshot.collection.message}</Text>}
+        <Text size="sm">{reportSummary.length > 220 ? reportSummary.slice(0, 220) + '…' : reportSummary}</Text>
+        {snapshot.updatedAt > 0 && <Row gap="xs"><Text muted size="xs">마지막 보고</Text><RelativeTime at={snapshot.updatedAt} /></Row>}
         </Stack>
       </Callout>
       <Collapsible title={snapshot.sourceHealth?.length ? `수집 상태 · 확인 필요 ${unhealthy.length}개` : '수집 상태 · 아직 기록 없음'}>
@@ -129,6 +193,7 @@ export default function Panel() {
           </Stack>)}
         </Stack>
       </Collapsible>
+      </Stack>}
       <Tabs label="Ping Inbox" value={read(section) ?? 'now'} onChange={value => set(section, value)}>
         <Tab value="now" label="지금">
           <Stack gap="lg">
@@ -148,16 +213,13 @@ export default function Panel() {
             {snapshot.judgments && actionable.length === 0 && <Text size="sm">이번 보고에는 바로 처리할 항목이 없습니다.</Text>}
             {actionable.map((item: Judgment) => {
               const proposal = snapshot.proposals.find(proposal => proposal.id === item.id || proposal.title === item.title)
-              const { subject, source } = splitTitle(item.title)
+              const { subject, source } = splitTitle(item.title, proposal?.repo, item.url || proposal?.url)
               return <Card key={item.title} title={subject} description={source}>
                 <Stack gap="sm">
-                  <Row gap="sm" align="center" wrap>
-                    <Badge tone={priorityTones[item.priority]}>{priorityLabels[item.priority]}</Badge>
-                    {item.manualPriority && <Text muted size="xs">내가 지정</Text>}
-                  </Row>
-                  <Text size="sm">{item.reason}</Text>
-                  <Text size="sm">권장 · {item.action}</Text>
-                  {item.id ? <TaskActions id={item.id} proposal={proposal} url={item.url} priority={item.manualPriority ? item.priority : undefined} /> : item.url && <Link href={item.url}>근거</Link>}
+                <Row gap="sm"><Badge>{priorityLabels[item.priority]}</Badge>{item.manualPriority && <Text muted size="xs">내가 지정</Text>}</Row>
+                <Text size="sm">{item.reason}</Text>
+                <Text size="sm">권장 · {item.action}</Text>
+                {item.id ? <TaskActions id={item.id} proposal={proposal} url={item.url} priority={item.manualPriority ? item.priority : undefined} /> : item.url && <Link href={item.url}>근거</Link>}
                 </Stack>
               </Card>
             })}
@@ -171,10 +233,9 @@ export default function Panel() {
             <Input label="대기 작업 검색" labelHidden type="search" placeholder="제목이나 프로젝트 검색" value={read(query)}
               onChange={value => { set(query, value); set(visible, 8) }} />
             {proposals.length === 0 && <Text muted size="sm">{search ? '검색 결과가 없습니다.' : '대기 중인 일이 없습니다.'}</Text>}
-            {proposals.slice(0, read(visible)).map((proposal: Proposal) => <Collapsible key={proposal.id}
-              title={proposal.title.replace(/^[^:]+: /, '')}
-              description={proposal.title.split(': ')[0] + ' · ' + proposal.repo.split('/').at(-1)}
-              open={open === proposal.id} onChange={value => set(expanded, value ? proposal.id : '')}>
+            {proposals.slice(0, read(visible)).map((proposal: Proposal) => <Card key={proposal.id}
+              title={splitTitle(proposal.title).subject}
+              description={splitTitle(proposal.title, proposal.repo, proposal.url).source}>
               <Stack gap="sm">
                 <Text size="sm">{proposal.summary}</Text>
                 {proposal.status === 'uncertain' && <Text size="sm">실행 응답을 확인하지 못했습니다. 오르카에서 생성된 작업을 먼저 확인하세요.</Text>}
@@ -182,7 +243,7 @@ export default function Panel() {
                 {proposal.manualPriority && <Text muted size="xs">내가 지정 · {priorityLabels[proposal.priority!]}</Text>}
                 <TaskActions id={proposal.id} proposal={proposal} url={proposal.url} priority={proposal.priority} />
               </Stack>
-            </Collapsible>)}
+            </Card>)}
             {proposals.length > read(visible) && <Button size="sm" variant="ghost" onPress={() => set(visible, read(visible) + 8)}>이전 작업 더 보기</Button>}
             {(snapshot.snoozed ?? []).length > 0 && <Collapsible title={`나중에 보기 ${(snapshot.snoozed ?? []).length}건`}>
               <Stack gap="md">{(snapshot.snoozed ?? []).map(reminder => <Stack key={reminder.id} gap="sm">
@@ -211,6 +272,7 @@ export default function Panel() {
                 : <Markdown key={index} content={line.replace(/^[-*]\s+/, '').replace(/(?<!\S)https?:\/\/\S+/g, url => `[원문](${url})`)} />)}
           </Stack>
         </Tab>
+        <Tab value="theory" label="오늘의 이론"><TheoryPanel learning={snapshot.theory} pending={pending} /></Tab>
       </Tabs>
     </Stack>}
   </Stack>

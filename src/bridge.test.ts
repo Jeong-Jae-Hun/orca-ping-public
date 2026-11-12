@@ -17,6 +17,21 @@ function fixture() {
   return { home, state, launch, close: () => rmSync(home, { recursive: true, force: true }) }
 }
 
+test('학습 방향은 작업 실행 없이 저장하고 학습 기록 손상은 보고를 숨기지 않는다', () => {
+  const f = fixture()
+  try {
+    const saved = bridge({ action: 'theory-preferences', text: '정의부터 깊게' }, f.state, f.home, () => { throw new Error('Must not start a task') })
+    assert.equal(saved.theory?.preferences, '정의부터 깊게')
+    assert.equal(saved.proposals.length, 1)
+    writeFileSync(join(f.state, 'theory-preferences.json'), 'broken')
+    const recovered = bridge({ action: 'snapshot' }, f.state, f.home)
+    assert.equal(recovered.report, '리뷰 1건')
+    assert.match(recovered.theory?.error ?? '', /Learning data/)
+    writeFileSync(join(f.state, 'config.json'), JSON.stringify({ learning: { engine: 'codex', model: '' } }))
+    assert.throws(() => bridge({ action: 'snapshot' }, f.state, f.home), /Learning model is required/)
+  } finally { f.close() }
+})
+
 test('조회는 실행하지 않고 시작은 정확히 한 번만 요청한다', () => {
   const f = fixture(); const calls: string[][] = []
   try {
@@ -32,6 +47,7 @@ test('조회는 실행하지 않고 시작은 정확히 한 번만 요청한다'
     assert.equal(calls[0][calls[0].indexOf('--parent-worktree') + 1], 'path:' + join(f.home, 'Projects/repo'))
     assert.equal(calls[0].includes('--no-parent'), false)
     assert.equal(calls[0][calls[0].indexOf('--surface') + 1], 'chat')
+    assert.equal(calls[0][calls[0].indexOf('--agent') + 1], 'codex')
     assert.match(calls[0][calls[0].indexOf('--prompt') + 1], /\$\(touch \/tmp\/ping-panel-injected\)/)
     assert.throws(() => bridge({ action: 'start', id }, f.state, f.home, args => { calls.push(args); return args[0] === 'worktree' && args[1] === 'create' ? f.launch : { ok: true } }), /already handled/)
     assert.equal(calls.filter(args => args[0] === 'worktree' && args[1] === 'create').length, 1)

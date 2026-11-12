@@ -132,3 +132,73 @@ test('긴 보고 원문은 첫 화면에서 짧게 보여 준다', async () => {
   assert.equal(view.find({ text: line.trim().slice(0, 220) + '…' })?.type, 'Text')
   await view.unmount()
 })
+
+test('학습 방향은 접어서 보이고 글별 의견과 다른 요청으로 저장한다', async () => {
+  const calls: unknown[] = []
+  const lesson = { id: '001-first', title: '첫 글', topic: '기초', content: '## Reading\nA claim.', readAt: null, order: 1, reason: '기초', notes: [] }
+  const current = { ...snapshot, theory: { current: lesson, history: [], remaining: 1, preferences: '정의부터 깊게' } }
+  const host = mockHost({ requests: {
+    'ping.refresh': () => ({ snapshot: current, error: null }),
+    'ping.action': input => { calls.push(input); current.theory.preferences = input.text!; return { snapshot: current, error: null } },
+  } })
+  const view = await mount(panel, { host })
+  await view.select({ type: 'Tabs' }, 'theory')
+  assert.equal(view.find({ label: '어떻게 배우고 싶나요?' }), null)
+  assert.equal(view.find({ label: '이론에 대한 내 의견' }), null)
+  assert.equal(view.find({ text: '지금 보고 받기' }), null)
+  assert.equal(view.find({ text: '읽었어요' })?.type, 'Button')
+  await view.toggle({ label: '학습 방향' })
+  assert.equal(view.find({ label: '어떻게 배우고 싶나요?' })?.props.value, '정의부터 깊게')
+  await view.type({ label: '어떻게 배우고 싶나요?' }, '기초와 공식 명세를 함께', { replace: true })
+  await view.press({ text: '학습 방향 저장' })
+  assert.deepEqual(calls, [{ action: 'theory-preferences', text: '기초와 공식 명세를 함께' }])
+  assert.equal(view.find({ text: '학습 방향 저장' })?.disabled, true)
+  assert.equal(current.theory.current.readAt, null)
+  assert.deepEqual(view.errors, [])
+  assert.deepEqual(view.refusals, [])
+  await view.unmount()
+})
+
+test('기초와 반례는 글 아래에 표시하고 읽음이나 다음 추천을 요청하지 않는다', async () => {
+  const calls: unknown[] = []
+  const lesson = { id: '001-first', title: '첫 글', topic: '기초', content: '원문', readAt: null, order: 1, reason: '기초', notes: [] }
+  const host = mockHost({ requests: {
+    'ping.refresh': () => ({ snapshot: { ...snapshot, theory: { current: lesson, history: [], remaining: 1 } }, error: null }),
+    'ping.action': input => {
+      calls.push(input)
+      return { snapshot: { ...snapshot, theory: { current: lesson, history: [], remaining: 1, explanation: { id: lesson.id, mode: input.mode!, content: input.mode === 'foundations' ? '정의부터 설명합니다.' : '이 경우에는 성립하지 않습니다.', fingerprint: 'test' } } }, error: null }
+    },
+  } })
+  const view = await mount(panel, { host })
+  await view.select({ type: 'Tabs' }, 'theory')
+  await view.press({ text: '더 기초부터' })
+  assert.ok(view.findAll({ type: 'Markdown' }).some(item => item.props.content === '정의부터 설명합니다.'))
+  await view.press({ text: '반례 보기' })
+  assert.ok(view.findAll({ type: 'Markdown' }).some(item => item.props.content === '이 경우에는 성립하지 않습니다.'))
+  assert.deepEqual(calls, [{ action: 'theory-explain', id: lesson.id, mode: 'foundations' }, { action: 'theory-explain', id: lesson.id, mode: 'counterexample' }])
+  assert.equal(view.find({ text: '읽었어요' })?.disabled, false)
+  assert.equal(view.find({ text: '다음 이론 추천' }), null)
+  assert.deepEqual(view.errors, [])
+  assert.deepEqual(view.refusals, [])
+  await view.unmount()
+})
+
+test('인박스는 작업 제목과 원문 출처를 묶고 보조 입력은 펼칠 때만 표시한다', async () => {
+  const proposal = { ...snapshot.proposals[0], title: '리뷰 요청: example/service#42 docs(server): 엔진 경계', url: 'https://github.com/example/service/pull/42' }
+  const host = mockHost({ requests: { 'ping.refresh': { snapshot: { ...snapshot, proposals: [proposal], judgments: [
+    { id: proposal.id, title: proposal.title, priority: 'today', reason: '리뷰 요청을 받았습니다.', action: '변경 내용을 확인하세요.', url: proposal.url },
+  ] }, error: null } } })
+  const view = await mount(panel, { host })
+  assert.equal(view.find({ text: 'Ping Inbox' })?.type, 'Heading')
+  const cards = view.findAll({ type: 'Card' })
+  assert.equal(cards[0].props.title, 'docs(server): 엔진 경계')
+  assert.equal(cards[0].props.description, '리뷰 요청 · example/service #42')
+  assert.equal(view.find({ text: '오늘' })?.type, 'Badge')
+  assert.equal(view.find({ text: '세션 시작' })?.disabled, false)
+  assert.equal(view.find({ label: '짧은 의견' }), null)
+  assert.equal(view.find({ label: '우선순위' }), null)
+  assert.equal(view.find({ label: '판단 엔진' }), null)
+  assert.deepEqual(view.errors, [])
+  assert.deepEqual(view.refusals, [])
+  await view.unmount()
+})

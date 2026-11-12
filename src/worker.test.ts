@@ -4,6 +4,19 @@ import type { Snapshot } from './protocol.ts'
 
 const snapshot: Snapshot = { batch: 'batch1', report: '리뷰 요청 · 1건', updatedAt: 1000, proposals: [] }
 
+test('학습 설정과 설명 요청을 전달하고 잘못된 글 ID는 전송하지 않는다', async () => {
+  const actions: unknown[] = []
+  const host = mockHost({ results: { 'notifications.show': { delivered: true }, 'statusBar.update': { ok: true } } })
+  const worker = await mountWorker({ default: orca => activate(orca, async input => { actions.push(input); return snapshot }), deactivate }, { host })
+  try {
+    await worker.request('ping.action', { action: 'theory-preferences', text: '정의부터' })
+    await worker.request('ping.action', { action: 'theory-explain', id: '001-claims', mode: 'foundations' })
+    assert.equal(actions.filter(item => (item as { action: string }).action.startsWith('theory-')).length, 2)
+    await assert.rejects(worker.request('ping.action', { action: 'theory-explain', id: '../escape', mode: 'foundations' }), /Invalid action/)
+    assert.equal(actions.filter(item => (item as { id?: string }).id === '../escape').length, 0)
+  } finally { await worker.deactivate() }
+})
+
 test('새 회차만 알리고 반복 조회에서는 중복 알림을 보내지 않는다', async () => {
   const host = mockHost({ results: { 'notifications.show': { delivered: true }, 'statusBar.update': { ok: true } } })
   const worker = await mountWorker({ default: orca => activate(orca, async () => snapshot), deactivate }, { host })

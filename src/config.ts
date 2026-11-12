@@ -10,7 +10,9 @@ export const runtimeEnv = () => ({ ...process.env, PATH: [join(homedir(), '.loca
 const schema = z.object({
   collectorCommand: z.array(z.string().min(1)).max(32).default([]),
   collectorCwd: z.string().default(''), repositories: z.record(z.string(), z.string()).default({}),
-  agent: z.enum(['claude', 'codex']).default('claude'),
+  agent: z.enum(['claude', 'codex']).default('codex'),
+  learning: z.object({ engine: z.enum(['off', 'codex', 'claude']).default('off'), model: z.string().max(80).default('') }).strict()
+    .refine(value => value.engine === 'off' || value.model.trim().length > 0, 'Learning model is required when enabled').default({ engine: 'off', model: '' }),
   timeZone: z.string().refine(value => { try { new Intl.DateTimeFormat('en', { timeZone: value }); return true } catch { return false } }).default(Intl.DateTimeFormat().resolvedOptions().timeZone),
   orcaExecutable: z.string().min(1).default('orca'), runtimeMetadataPath: z.string().default(''),
 }).strict()
