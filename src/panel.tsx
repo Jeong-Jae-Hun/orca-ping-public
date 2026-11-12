@@ -207,10 +207,10 @@ function SpecCard({ spec, pending }: { spec: Spec; pending: boolean }) {
       {!current && spec.steps.length > 0 && <Text size="sm">모든 단계를 마쳤습니다. 문서에 spec: done 을 적으면 목록에서 내립니다.</Text>}
       {spec.sessions.length === 0 && <Text muted size="xs">이 명세에 연결된 Orca 세션이 없습니다. PR 브랜치나 frontmatter branch 로 연결합니다.</Text>}
       {spec.sessions.length > 0 && <Row gap="sm" wrap>{spec.sessions.slice(0, 3).map(session =>
-        <Button key={session.key} size="sm" variant={session === spec.sessions[0] ? 'solid' : 'ghost'} disabled={pending} onPress={() => act('spec-open', spec.id, { key: session.key })}>
+        <Button key={session.key} size="sm" icon="agent" tone={session === spec.sessions[0] ? 'accent' : undefined} variant={session === spec.sessions[0] ? 'solid' : 'outline'} disabled={pending} onPress={() => act('spec-open', spec.id, { key: session.key })}>
           {`세션 열기 · ${session.title.slice(0, 24)} · ${sessionLabels[session.state] ?? session.state}`}
         </Button>)}</Row>}
-      <Row><Button size="sm" variant="ghost" disabled={pending} onPress={() => act('spec-status', spec.id, { text: 'backlog' })}>백로그로</Button></Row>
+      <Row><Button size="sm" icon="pause" variant="outline" disabled={pending} onPress={() => act('spec-status', spec.id, { text: 'backlog' })}>백로그로</Button></Row>
       <Collapsible title="명세 보기" description={spec.path}>
         <Stack gap="md">
           {spec.summary && <Outline content={spec.summary} />}
@@ -237,7 +237,7 @@ function SpecPanel({ tracking, pending }: { tracking?: Specs; pending: boolean }
       {tracking!.sessions.map(session => <Stack key={session.key} gap="xs">
         <Row gap="sm" align="center" justify="between" wrap>
           <Text size="sm" weight="semibold">{session.title}</Text>
-          <Button size="sm" variant="ghost" disabled={pending} onPress={() => act('session-open', undefined, { key: session.key })}>열기</Button>
+          <Button size="sm" icon="agent" tone="accent" variant="solid" disabled={pending} onPress={() => act('session-open', undefined, { key: session.key })}>열기</Button>
         </Row>
         <Text muted size="xs">{[sessionLabels[session.state] ?? session.state, session.repo, session.branch].filter(Boolean).join(' · ')}</Text>
         {session.last && <Text size="xs">{session.last}</Text>}
@@ -246,7 +246,7 @@ function SpecPanel({ tracking, pending }: { tracking?: Specs; pending: boolean }
     {(tracking?.backlog ?? []).length > 0 && <Collapsible title={`백로그 ${tracking!.backlog.length}`} description="지금 진행하지 않는 명세. 문서에는 spec: backlog 로 남습니다.">
       <Stack gap="md">{tracking!.backlog.map(item => <Row key={item.id} gap="sm" align="center" justify="between" wrap>
         <Stack gap="xs"><Text size="sm">{item.title}</Text><Text muted size="xs">{item.path}</Text></Stack>
-        <Button size="sm" variant="ghost" disabled={pending} onPress={() => act('spec-status', item.id, { text: 'active' })}>다시 진행</Button>
+        <Button size="sm" icon="play" variant="outline" disabled={pending} onPress={() => act('spec-status', item.id, { text: 'active' })}>다시 진행</Button>
       </Row>)}</Stack>
     </Collapsible>}
     {tracking && tracking.checkedAt > 0 && <Row gap="xs"><Text muted size="xs">PR 상태 확인</Text><RelativeTime at={tracking.checkedAt} /></Row>}
