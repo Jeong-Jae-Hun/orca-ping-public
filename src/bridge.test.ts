@@ -208,3 +208,23 @@ test('내일 알림은 백엔드 설정 시간대를 따른다', async () => {
   assert.equal(new Date(snoozeUntil('tomorrow', now, 'UTC')).toISOString(), '2026-01-02T09:00:00.000Z')
   assert.equal(new Date(snoozeUntil('tomorrow', now, 'America/New_York')).toISOString(), '2026-01-02T14:00:00.000Z')
 })
+
+test('명세 세션 열기는 지금 계산한 명세에 연결된 세션만 연다', () => {
+  const f = fixture()
+  try {
+    const vault = join(f.home, 'vault')
+    mkdirSync(join(vault, 'notes'), { recursive: true })
+    writeFileSync(join(vault, 'notes/A.md'), '---\nspec: active\nbranch: feat/a\n---\n# 명세\n\n## 구현\n\n- [ ] 작업\n')
+    writeFileSync(join(f.state, 'config.json'), JSON.stringify({ timeZone: 'Asia/Seoul', specs: { enabled: true, roots: [vault] } }))
+    const worktrees = [{ worktreeId: 'repo::/w', repo: 'r', path: '/w', branch: 'refs/heads/feat/a', linkedPR: null, agents: [{ paneKey: 'structured-agent-session-claude_1:pane', state: 'working', updatedAt: 1 }] }]
+    const specRun = (command: string) => command === 'orca' ? JSON.stringify({ result: { worktrees } }) : '[]'
+    const revealed: string[] = []
+    const reveal = (id: string) => { revealed.push(id); return { sessionId: id, workspaceId: 'repo::/w', agent: 'claude' } }
+    const snapshot = bridge({ action: 'snapshot' }, f.state, f.home, () => { throw new Error('Must not launch') }, reveal, 1000, specRun)
+    const spec = snapshot.specs!.items[0]
+    assert.equal(spec.sessions[0].key, 'claude_1')
+    assert.throws(() => bridge({ action: 'spec-open', id: spec.id, key: 'claude_other' }, f.state, f.home, () => { throw new Error('Must not launch') }, reveal, 1000, specRun), /no longer linked/)
+    bridge({ action: 'spec-open', id: spec.id, key: 'claude_1' }, f.state, f.home, () => { throw new Error('Must not launch') }, reveal, 1000, specRun)
+    assert.deepEqual(revealed, ['claude_1'])
+  } finally { f.close() }
+})

@@ -8,6 +8,7 @@ import { addDays, addHours, set, fromZonedTime, toZonedTime } from '../vendor/da
 import { collectionStatus, requestCollection } from './collect.ts'
 import { sourceHealth } from './health.ts'
 import { theory } from './theory.ts'
+import { setSpecStatus, specs, type Run as SpecRun, type SpecOptions } from './spec.ts'
 import { revealSession, type RevealedSession } from './session.ts'
 import { config, defaultState, runtimeEnv, expandHome } from './config.ts'
 import { parseArgs } from 'node:util'
@@ -46,8 +47,8 @@ function savedTask(id: string, record: Record): SavedTask | undefined {
 }
 
 export function bridge(input: Request, state = defaultState(), home = homedir(), run = execute,
-  reveal: (id: string) => RevealedSession = revealSession, now = Date.now()): Snapshot {
-  if (!input || !['snapshot', 'start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority', 'theory-read', 'theory-note', 'theory-next', 'theory-preferences', 'theory-explain'].includes(input.action)) throw new Error('Invalid action')
+  reveal: (id: string) => RevealedSession = revealSession, now = Date.now(), specRun?: SpecRun): Snapshot {
+  if (!input || !['snapshot', 'start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority', 'theory-read', 'theory-note', 'theory-next', 'theory-preferences', 'theory-explain', 'spec-open', 'spec-status', 'session-open'].includes(input.action)) throw new Error('Invalid action')
   const settings = config(state)
   const rows = read(join(state, 'proposals.md')).split('\n').filter(line => line.split(' | ').length >= 5)
   const proposals = rows.map(row => {
@@ -61,7 +62,7 @@ export function bridge(input: Request, state = defaultState(), home = homedir(),
   const actions = join(state, 'panel-actions')
   mkdirSync(actions, { recursive: true, mode: 0o700 })
   if (input.action === 'collect') requestCollection(state, home)
-  if (input.action !== 'snapshot' && input.action !== 'collect' && !input.action.startsWith('theory-')) {
+  if (input.action !== 'snapshot' && input.action !== 'collect' && !input.action.startsWith('theory-') && !input.action.startsWith('spec-') && input.action !== 'session-open') {
     if (typeof input.id !== 'string' || !/^[a-f0-9]{8}$/.test(input.id)) throw new Error('Invalid proposal ID')
     if (input.action === 'priority' && input.priority !== 'auto' && !grades.includes(input.priority ?? '')) throw new Error('Invalid priority')
     if (input.action === 'snooze' && !['hour', 'tomorrow'].includes(input.preset ?? '')) throw new Error('Invalid reminder preset')
@@ -148,6 +149,25 @@ export function bridge(input: Request, state = defaultState(), home = homedir(),
     } catch { /* 상태 조회 실패로 저장한 세션을 버리지 않는다. */ }
   }
   const reminders = [...records].flatMap(([id, record]) => record.status === 'snoozed' && record.until ? [{ id, title: record.title, url: record.url ?? '', until: record.until }] : [])
+  const specOptions: SpecOptions = { ...settings.specs, orca: settings.orcaExecutable }
+  if (input.action === 'spec-status') {
+    if (typeof input.id !== 'string' || !/^[a-f0-9]{8}$/.test(input.id) || (input.text !== 'backlog' && input.text !== 'active')) throw new Error('Invalid spec status')
+    setSpecStatus(specOptions, state, input.id, input.text, specRun)
+  }
+  let tracking: Snapshot['specs']
+  try { tracking = specs(specOptions, state, specRun, now) }
+  catch (error) { tracking = { items: [], backlog: [], sessions: [], checkedAt: now, error: 'Specs could not be read: ' + (error instanceof Error ? error.message : String(error)) } }
+  if (input.action === 'spec-open' || input.action === 'session-open') {
+    // 패널이 보낸 키는 지금 계산한 명세의 세션이나 활동 세션일 때만 연다. 임의 세션·워크트리는 열지 않는다.
+    const session = input.action === 'spec-open' ? tracking?.items.find(item => item.id === input.id)?.sessions.find(item => item.key === input.key)
+      : tracking?.sessions.find(item => item.key === input.key)
+    if (!session) throw new Error('Spec session is no longer linked; refresh first')
+    if (session.key.startsWith('worktree:')) run(['worktree', 'activate', '--worktree', 'id:' + session.key.slice('worktree:'.length), '--json'], settings.orcaExecutable)
+    else {
+      const result = reveal === revealSession ? revealSession(session.key, settings.runtimeMetadataPath ? expandHome(settings.runtimeMetadataPath, home) : undefined) : reveal(session.key)
+      if (result.sessionId !== session.key) throw new Error('Spec session identity mismatch')
+    }
+  }
   let learning: Snapshot['theory']
   try { learning = theory(input, state, settings.learning) }
   catch (error) {
@@ -155,6 +175,7 @@ export function bridge(input: Request, state = defaultState(), home = homedir(),
     learning = { history: [], remaining: 0, error: 'Learning data could not be read; check the data directory' }
   }
   return {
+    specs: tracking,
     theory: learning,
     timeZone: settings.timeZone, collectionAvailable: settings.collectorCommand.length > 0, collection: collectionStatus(state), savedTasks: tasks,
     snoozed: reminders.filter(item => item.until > now), reminders: reminders.filter(item => item.until <= now),

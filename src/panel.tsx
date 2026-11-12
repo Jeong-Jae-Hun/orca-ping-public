@@ -1,5 +1,5 @@
-import { atom, Badge, Box, Button, Callout, Collapsible, Heading, Input, Link, Markdown, plugin, read, RelativeTime, Row, Select, set, Stack, Tab, Tabs, Text, type CardProps, type PanelContext } from 'orca'
-import type { Judgment, Priority, Proposal, Request, SavedTask, Theory, TheoryLesson, View } from './protocol.ts'
+import { atom, Badge, Box, Button, Callout, Collapsible, Heading, Input, Link, Markdown, plugin, Progress, read, RelativeTime, Row, Select, set, Stack, Tab, Tabs, Text, type CardProps, type PanelContext } from 'orca'
+import type { Judgment, Priority, Proposal, Request, SavedTask, Spec, SpecPr, Specs, Theory, TheoryLesson, View } from './protocol.ts'
 
 const view = atom<View>({ snapshot: null, error: null })
 const busy = atom(false)
@@ -30,7 +30,7 @@ async function refresh() {
   finally { set(busy, false) }
 }
 
-async function act(action: Request['action'], id?: string, extra: Pick<Request, 'preset' | 'priority' | 'text' | 'mode'> = {}) {
+async function act(action: Request['action'], id?: string, extra: Pick<Request, 'preset' | 'priority' | 'text' | 'mode' | 'key'> = {}) {
   set(busy, true)
   set(learningAction, action)
   try {
@@ -135,6 +135,121 @@ function TheoryReading({ lesson, pending, current, remaining, explanation }: { l
         <Text muted size="xs">의견은 다음 추천에 참고합니다. 읽음 표시는 이해도 평가가 아닙니다.</Text>
       </Stack>
     </Collapsible>
+  </Stack>
+}
+
+// ─── 명세 ───
+const prLabels = { open: '리뷰 전', draft: '드래프트', merged: '머지', closed: '닫힘' }
+const prTones = { open: 'accent', draft: 'neutral', merged: 'success', closed: 'neutral' } as const
+const reviewLabels = { approved: '승인', changes: '수정 요청', pending: '리뷰 대기' }
+const checkLabels = { pass: 'CI 통과', fail: 'CI 실패', pending: 'CI 진행 중' }
+const stepLabels = { done: '완료', active: '진행 중', todo: '할 일' }
+const stepTones = { done: 'success', active: 'accent', todo: 'neutral' } as const
+const sessionLabels: Record<string, string> = { working: '실행 중', waiting: '대기 중', blocked: '확인 필요', done: '응답 완료', idle: '세션 없음' }
+
+// PR 한 개의 흐름. 지금 단계만 배지로 띄우고 앞뒤 단계는 글자로 둔다.
+const prStages = ['드래프트', '리뷰', '승인', '머지']
+const prStage = (pr: SpecPr) => pr.state === 'merged' ? 3 : pr.state === 'draft' ? 0 : pr.review === 'approved' ? 2 : 1
+
+// 명세 본문은 출처·코드·링크가 빽빽하다. 카드에는 항목 첫 줄만 짧게 보이고 원문은 접어 둔다.
+const plain = (line: string) => line.replace(/\[\[[^\]|]*\|([^\]]+)\]\]/g, '$1').replace(/\[\[([^\]]+)\]\]/g, '$1').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  .replace(/`([^`]*)`/g, '$1').replace(/\*\*|__/g, '').replace(/\s*\([^()]*\)/g, '').replace(/\s+/g, ' ').trim()
+function outline(content: string) {
+  const items = content.split('\n').filter(line => /^ ?([-*]|\d+\.) /.test(line))
+  const lines = (items.length ? items : content.split(/\n\s*\n/).slice(0, 1)).map(line => {
+    const box = /^ ?[-*] \[( |x|X)\] /.exec(line)
+    const text = plain(line.replace(/^ ?([-*]|\d+\.) (\[[ xX]\] )?/, ''))
+    return `${box ? (box[1] === ' ' ? '☐ ' : '☑ ') : '· '}${text.length > 70 ? text.slice(0, 68) + '…' : text}`
+  })
+  return { lines: lines.slice(0, 6), more: Math.max(0, lines.length - 6) }
+}
+
+function Outline({ content }: { content: string }) {
+  const { lines, more } = outline(content)
+  return <Stack gap="xs">
+    {lines.map((line, index) => <Text key={index} size="sm">{line}</Text>)}
+    {more > 0 && <Text muted size="xs">{`외 ${more}개`}</Text>}
+    <Collapsible title="원문"><Markdown content={content} /></Collapsible>
+  </Stack>
+}
+
+function PrLine({ pr }: { pr: SpecPr }) {
+  const stage = prStage(pr)
+  return <Stack gap="xs">
+    <Row gap="sm" align="center" wrap>
+      <Link href={pr.url}>{pr.ref}</Link>
+      {pr.checks && <Badge tone={pr.checks === 'fail' ? 'danger' : pr.checks === 'pass' ? 'success' : 'neutral'}>{checkLabels[pr.checks]}</Badge>}
+      {pr.review === 'changes' && <Badge tone="warning">{reviewLabels.changes}</Badge>}
+    </Row>
+    {pr.state === 'closed' ? <Row><Badge tone={prTones.closed}>{prLabels.closed}</Badge></Row>
+      : <Row gap="xs" align="center" wrap>{prStages.map((label, index) => <Row key={label} gap="xs" align="center">
+        {index > 0 && <Text muted size="xs">›</Text>}
+        {index === stage ? <Badge tone={stage === 3 ? 'success' : 'accent'}>{label}</Badge> : <Text muted={index > stage} size="xs">{index < stage ? `✓ ${label}` : label}</Text>}
+      </Row>)}</Row>}
+  </Stack>
+}
+
+function SpecCard({ spec, pending }: { spec: Spec; pending: boolean }) {
+  const finished = spec.steps.filter(step => step.status === 'done').length
+  const current = spec.steps[spec.current]
+  return <TaskCard title={spec.title} description={`${spec.project} · ${spec.steps.length ? `단계 ${finished}/${spec.steps.length}` : '단계 없음'} · ${spec.mode === 'marked' ? '추적 표시' : '자동 감지'}`}>
+    <Stack gap="sm">
+      {spec.steps.length > 0 && <Progress label="명세 진행" labelHidden value={finished / spec.steps.length * 100} />}
+      {spec.steps.length === 0 && spec.prs.map(pr => <PrLine key={pr.ref} pr={pr} />)}
+      {spec.steps.map((step, index) => <Stack key={index} gap="xs">
+        <Row gap="sm" align="center" wrap>
+          <Text size="sm" weight={index === spec.current ? 'semibold' : undefined} muted={step.status === 'done'}>{`${step.status === 'done' ? '✓' : index === spec.current ? '▶' : '○'} ${step.title}`}</Text>
+          {index === spec.current && <Badge tone="accent">지금</Badge>}
+          {step.total > 0 && <Text muted size="xs">{`체크 ${step.done}/${step.total}`}</Text>}
+        </Row>
+        {step.prs.map(pr => <PrLine key={pr.ref} pr={pr} />)}
+      </Stack>)}
+      {!current && spec.steps.length > 0 && <Text size="sm">모든 단계를 마쳤습니다. 문서에 spec: done 을 적으면 목록에서 내립니다.</Text>}
+      {spec.sessions.length === 0 && <Text muted size="xs">이 명세에 연결된 Orca 세션이 없습니다. PR 브랜치나 frontmatter branch 로 연결합니다.</Text>}
+      {spec.sessions.length > 0 && <Row gap="sm" wrap>{spec.sessions.slice(0, 3).map(session =>
+        <Button key={session.key} size="sm" variant={session === spec.sessions[0] ? 'solid' : 'ghost'} disabled={pending} onPress={() => act('spec-open', spec.id, { key: session.key })}>
+          {`세션 열기 · ${session.title.slice(0, 24)} · ${sessionLabels[session.state] ?? session.state}`}
+        </Button>)}</Row>}
+      <Row><Button size="sm" variant="ghost" disabled={pending} onPress={() => act('spec-status', spec.id, { text: 'backlog' })}>백로그로</Button></Row>
+      <Collapsible title="명세 보기" description={spec.path}>
+        <Stack gap="md">
+          {spec.summary && <Outline content={spec.summary} />}
+          {spec.steps.map((step, index) => <Collapsible key={index} title={`${index === spec.current ? '▶ ' : ''}${step.title}`} description={[stepLabels[step.status], step.total ? `체크 ${step.done}/${step.total}` : '', step.prs.length ? `PR ${step.prs.length}` : ''].filter(Boolean).join(' · ')}>
+            <Stack gap="sm">
+              <Row><Badge tone={stepTones[step.status]}>{stepLabels[step.status]}</Badge></Row>
+              {step.content ? <Outline content={step.content} /> : <Text muted size="xs">본문이 길어 생략했습니다. 원본 문서에서 확인하세요.</Text>}
+            </Stack>
+          </Collapsible>)}
+        </Stack>
+      </Collapsible>
+    </Stack>
+  </TaskCard>
+}
+
+function SpecPanel({ tracking, pending }: { tracking?: Specs; pending: boolean }) {
+  return <Stack gap="lg">
+    {!tracking && <Text size="sm">명세 추적이 꺼져 있습니다. config.json 의 specs.enabled 를 true 로 바꾸고 명세 폴더(roots)를 적습니다.</Text>}
+    {tracking?.error && <Text muted size="xs">{tracking.error}</Text>}
+    {tracking && tracking.items.length === 0 && (tracking.sessions ?? []).length === 0 && <Text size="sm">작업 중인 명세가 없습니다. 문서 머리에 spec: active 를 적거나, 문서가 내 열린 PR 을 가리키면 자동으로 잡습니다.</Text>}
+    {tracking?.items.map(spec => <SpecCard key={spec.id} spec={spec} pending={pending} />)}
+    {(tracking?.sessions ?? []).length > 0 && <Stack gap="md">
+      <Heading level={3}>{`명세 없는 세션 ${tracking!.sessions.length}`}</Heading>
+      {tracking!.sessions.map(session => <Stack key={session.key} gap="xs">
+        <Row gap="sm" align="center" justify="between" wrap>
+          <Text size="sm" weight="semibold">{session.title}</Text>
+          <Button size="sm" variant="ghost" disabled={pending} onPress={() => act('session-open', undefined, { key: session.key })}>열기</Button>
+        </Row>
+        <Text muted size="xs">{[sessionLabels[session.state] ?? session.state, session.repo, session.branch].filter(Boolean).join(' · ')}</Text>
+        {session.last && <Text size="xs">{session.last}</Text>}
+      </Stack>)}
+    </Stack>}
+    {(tracking?.backlog ?? []).length > 0 && <Collapsible title={`백로그 ${tracking!.backlog.length}`} description="지금 진행하지 않는 명세. 문서에는 spec: backlog 로 남습니다.">
+      <Stack gap="md">{tracking!.backlog.map(item => <Row key={item.id} gap="sm" align="center" justify="between" wrap>
+        <Stack gap="xs"><Text size="sm">{item.title}</Text><Text muted size="xs">{item.path}</Text></Stack>
+        <Button size="sm" variant="ghost" disabled={pending} onPress={() => act('spec-status', item.id, { text: 'active' })}>다시 진행</Button>
+      </Row>)}</Stack>
+    </Collapsible>}
+    {tracking && tracking.checkedAt > 0 && <Row gap="xs"><Text muted size="xs">PR 상태 확인</Text><RelativeTime at={tracking.checkedAt} /></Row>}
   </Stack>
 }
 
@@ -283,6 +398,7 @@ export default function Panel() {
                 : <Markdown key={index} content={line.replace(/^[-*]\s+/, '').replace(/(?<!\S)https?:\/\/\S+/g, url => `[원문](${url})`)} />)}
           </Stack>
         </Tab>
+        <Tab value="specs" label={`명세 ${snapshot.specs?.items.length ?? 0}`}><SpecPanel tracking={snapshot.specs} pending={pending} /></Tab>
         <Tab value="theory" label="오늘의 이론"><TheoryPanel learning={snapshot.theory} pending={pending} /></Tab>
       </Tabs>
     </Stack>}

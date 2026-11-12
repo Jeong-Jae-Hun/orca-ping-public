@@ -219,3 +219,32 @@ test('다크 모드에서도 작업은 테마 표면과 테두리로 구분하�
   assert.deepEqual(view.refusals, [])
   await view.unmount()
 })
+
+test('명세 탭은 단계 흐름을 모두 보이고 세션 열기는 그 세션 키만 보낸다', async () => {
+  const calls: unknown[] = []
+  const pr = { ref: 'o/r#2', url: 'https://github.com/o/r/pull/2', title: 'API', branch: 'feat/a', state: 'open' as const, review: 'pending' as const, checks: 'pass' as const }
+  const specs = { checkedAt: 1000, sessions: [{ key: 'claude_2', title: 'QA 확인', state: 'waiting', worktree: '/w/qa', updatedAt: 1, repo: 'specs', branch: 'qa', last: '정리했습니다.' }], backlog: [{ id: 'ffff0000', title: '인프라 백로그', project: 'notes', path: 'notes/backlog.md' }], items: [{ id: 'abcd1234', title: '결제 대행', project: 'notes', path: 'notes/a.md', mode: 'auto' as const, updatedAt: 1000, summary: '요약', prs: [pr],
+    steps: [{ title: '1. 스키마', content: '', prs: [], done: 2, total: 2, status: 'done' as const }, { title: '2. API', content: '- 끝: 옛 파이프라인은 0개입니다(`list-pipelines`). [[../_ARCHIVE|아카이브]] 참고\n- [ ] 서명 검증', prs: [pr], done: 0, total: 0, status: 'active' as const }, { title: '3. 배포', content: '', prs: [], done: 0, total: 1, status: 'todo' as const }],
+    current: 1, sessions: [{ key: 'claude_1', title: '구현 중', state: 'working', worktree: '/w', updatedAt: 1 }] }] }
+  const host = mockHost({ requests: {
+    'ping.refresh': () => ({ snapshot: { ...snapshot, specs }, error: null }),
+    'ping.action': input => { calls.push(input); return { snapshot: { ...snapshot, specs }, error: null } }
+  } })
+  const view = await mount(panel, { host })
+  await view.select({ type: 'Tabs' }, 'specs')
+  await view.toggle({ type: 'Collapsible', text: /명세 보기/ })
+  await view.toggle({ type: 'Collapsible', text: /2\. API/ })
+  assert.ok(view.find({ text: '· 끝: 옛 파이프라인은 0개입니다. 아카이브 참고' }))
+  assert.ok(view.find({ text: '☐ 서명 검증' }))
+  for (const text of ['✓ 1. 스키마', '▶ 2. API', '○ 3. 배포', '리뷰', 'CI 통과']) assert.ok(view.find({ text }), text)
+  await view.press({ text: '세션 열기 · 구현 중 · 실행 중' })
+  assert.ok(view.find({ text: '대기 중 · specs · qa' }))
+  await view.press({ text: '열기' })
+  await view.press({ text: '백로그로' })
+  await view.toggle({ type: 'Collapsible', text: /백로그 1/ })
+  await view.press({ text: '다시 진행' })
+  assert.deepEqual(calls, [{ action: 'spec-open', id: 'abcd1234', key: 'claude_1' }, { action: 'session-open', key: 'claude_2' }, { action: 'spec-status', id: 'abcd1234', text: 'backlog' }, { action: 'spec-status', id: 'ffff0000', text: 'active' }])
+  assert.deepEqual(view.errors, [])
+  assert.deepEqual(view.refusals, [])
+  await view.unmount()
+})

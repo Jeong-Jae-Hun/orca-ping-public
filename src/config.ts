@@ -15,6 +15,9 @@ const schema = z.object({
     .refine(value => value.engine === 'off' || value.model.trim().length > 0, 'Learning model is required when enabled').default({ engine: 'off', model: '' }),
   timeZone: z.string().refine(value => { try { new Intl.DateTimeFormat('en', { timeZone: value }); return true } catch { return false } }).default(Intl.DateTimeFormat().resolvedOptions().timeZone),
   orcaExecutable: z.string().min(1).default('orca'), runtimeMetadataPath: z.string().default(''),
+  // 명세 진행 탭. 켜면 Orca 세션 목록과 GitHub CLI(gh)로 PR 상태를 읽는다.
+  specs: z.object({ enabled: z.boolean().default(false), roots: z.array(z.string()).max(20).default([]), repos: z.array(z.string()).max(50).default([]),
+    docs: z.array(z.string().regex(/^[\w.-]+$/)).max(10).default(['docs']) }).strict().default({ enabled: false, roots: [], repos: [], docs: ['docs'] }),
 }).strict()
 export function config(state: string) {
   const root = resolve(state)

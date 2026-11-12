@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "ping-inbox",
   "name": "Ping Inbox",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "개인 수집기의 보고와 작업 제안을 모으고, 프로젝트별 작업 세션을 이어갑니다.",
   "engines": {
     "orca": ">=1.4.248"
