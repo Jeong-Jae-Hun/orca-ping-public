@@ -8,7 +8,7 @@ const url = z.string().max(2000).refine(v => !v || /^https?:\/\/[^\s|]+$/.test(v
 const grade = z.enum(['urgent','today','info','unknown'])
 const schema = z.object({
   report: z.string().max(50000).optional(),
-  proposals: z.array(z.object({ title, repository: z.string().max(100).optional(), url, summary: z.string().max(1000), instructions: z.string().max(16000) }).strict()).max(50).optional(),
+  proposals: z.array(z.object({ title, repository: z.string().max(200).optional(), url, summary: z.string().max(1000), instructions: z.string().max(16000) }).strict()).max(50).optional(),
   judgments: z.array(z.object({ title, priority: grade, reason: z.string().max(2000), action: z.string().max(1000), url }).strict()).max(50).optional(),
   sources: z.array(z.object({ id: title, title, status: z.enum(['ok','failed','skipped','unknown']), checkedAt: z.number().positive().max(Date.now()+60000), message: z.string().max(1000).default('') }).strict()).max(50).optional(),
 }).strict().refine(v => v.judgments === undefined || v.report !== undefined, { message: 'Judgments require a report' })

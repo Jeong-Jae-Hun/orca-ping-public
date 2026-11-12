@@ -18,5 +18,17 @@ try {
   assert.equal(snapshot.collectionAvailable, false, '기본 설치는 외부 명령을 실행하지 않아야 합니다.')
   assert.match(readFileSync(join(state, 'report.md'), 'utf8'), /예제 보고/)
   if (process.platform !== 'win32') assert.equal(statSync(join(state, 'report.md')).mode & 0o077, 0, '보고는 소유자만 읽어야 합니다.')
-  console.log('Package smoke test passed')
+  const local = join(state, 'local-only')
+  execFileSync(process.execPath, [cli, 'init', '--collector', 'demo', '--state', local])
+  execFileSync(process.execPath, [cli, 'collect', '--state', local])
+  let collected: typeof snapshot
+  for (let attempt = 0; attempt < 100; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+    collected = JSON.parse(execFileSync(process.execPath, [cli, 'status', '--state', local], { encoding: 'utf8' }))
+    if (collected.collection?.status === 'complete') break
+  }
+  assert.equal(collected!.collection?.status, 'complete', '로컬 수집기가 SSH 없이 완료돼야 합니다.')
+  assert.equal(collected!.proposals.length, 1, '백그라운드 수집 결과가 저장돼야 합니다.')
+  assert.equal(collected!.collectionAvailable, true, '초기 설정에서 수집기를 연결해야 합니다.')
+  console.log('Package smoke test passed: local collection without SSH')
 } finally { rmSync(state, { recursive: true, force: true }) }

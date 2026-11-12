@@ -2,7 +2,36 @@
 
 개인 수집기가 만든 보고와 작업 제안을 Orca 데스크톱에서 확인하는 플러그인입니다. 실제 계정 정보나 수집 결과 없이 배포합니다. 수집 명령과 프로젝트 경로는 각 사용자가 로컬에서 설정합니다.
 
-GitHub·Slack 등의 수집기는 포함하지 않습니다. JSON을 출력하는 스크립트나 에이전트를 연결하면 됩니다. 우선순위 판단도 수집기가 보내며, 플러그인은 근거와 권장 행동을 표시합니다.
+GitHub CLI로 본인의 리뷰 요청·멘션·담당 배정 알림을 읽는 수집기가 포함됩니다. Slack·메일 등은 JSON을 출력하는 별도 스크립트나 에이전트를 연결합니다. 우선순위 판단도 수집기가 보내며, 플러그인은 근거와 권장 행동을 표시합니다.
+
+## 맥 한 대로 시작하기
+
+맥만 있으면 수집·저장·패널·작업 세션을 모두 로컬에서 실행할 수 있습니다. WSL이나 SSH 서버는 필요하지 않습니다. 플러그인 연결 설정의 기본값은 `mode=local`입니다. 아래 명령은 macOS 터미널에서 실행합니다.
+
+Node.js 22.18 이상, Orca 앱과 CLI, GitHub CLI를 먼저 준비합니다. GitHub CLI의 `gh auth login`으로 본인 계정에 로그인합니다. GitHub 알림 API는 fine-grained PAT를 지원하지 않으므로 GitHub CLI OAuth 로그인이나 알림 조회 권한이 있는 classic PAT가 필요합니다. 인증 정보는 각자의 GitHub CLI에 보관합니다.
+
+```sh
+git clone https://github.com/Jeong-Jae-Hun/orca-ping-public.git "$HOME/Projects/ping-inbox"
+cd "$HOME/Projects/ping-inbox"
+gh auth login
+node src/cli.ts init --collector github
+orca plugin install https://github.com/Jeong-Jae-Hun/orca-ping-public --json
+node src/cli.ts collect
+```
+
+Orca의 신뢰된 워커 승인 안내를 확인한 뒤 설치합니다. 패널에서 ‘화면 갱신’을 누르면 수집 결과가 보입니다. 다음부터 ‘지금 보고 받기’로 다시 수집할 수 있습니다. 수집기는 이 복제본에 있으므로 폴더를 유지합니다. 기본 데이터 폴더에 이미 설정이 있다면 `init`은 거부하며 기존 값을 보존합니다. 그때는 아래 수집기 설정 형식으로 직접 연결합니다.
+
+GitHub 수집기는 직접 관련된 미독 알림 중 최신 20개를 표시합니다. GitHub의 읽음 상태를 바꾸거나 댓글·승인·머지를 실행하지 않습니다. PR·이슈의 현재 완료 여부는 작업을 시작할 때 확인합니다. 계정 연결 없이 먼저 보려면 `init --collector demo`를 사용합니다.
+
+리뷰 작업까지 실행하려면 로컬 `config.json`의 `repositories`에 `"owner/repository": "~/Projects/repository"`를 등록합니다. 등록 전에는 알림과 원문을 볼 수 있지만 ‘세션 시작’은 비활성입니다. 작업 에이전트도 각자 준비하며 기본은 Claude, Codex는 `agent=codex`로 고릅니다.
+
+수집 예약은 자동으로 만들지 않습니다. 주기적으로 받고 싶으면 자신의 맥에서 Orca 오토메이션이나 다른 예약 도구로 아래 명령을 실행합니다. 다른 사람에게 공유할 때는 이 저장소 URL과 이 절의 설치 순서를 전달하면 됩니다. 개인 설정·토큰·수신함은 복사하지 않습니다.
+
+```sh
+node "$HOME/Projects/ping-inbox/src/cli.ts" collect
+```
+
+알림 팝업 정책은 기존 공개판 동작을 따릅니다. 개인용 비서 핑의 계정·수집 설정과는 별도이며 현재 사용 중인 WSL 연결을 바꾸지 않습니다.
 
 ## 설치와 첫 실행
 
@@ -17,7 +46,7 @@ macOS 또는 Linux, Orca 1.4.248 이상, PATH에서 실행 가능한 Node.js 22.
 예제부터 시험하거나 수집기를 개발하려면 이 저장소를 별도로 복제합니다. 아래 명령은 복제한 저장소 루트에서 실행합니다. 배포판에는 런타임 의존성이 포함돼 있어 다음 명령에 `npm install`이 필요하지 않습니다.
 
 ```sh
-node src/cli.ts init
+node src/cli.ts init --collector demo
 node src/cli.ts demo
 node src/cli.ts status
 ```
@@ -141,3 +170,8 @@ TypeScript와 TSX는 Orca가 직접 읽습니다. 배포용 `vendor/`에는 날�
 GitHub Actions는 macOS/Linux에서 배포 의존성 재생성과 CLI 설치·데모 동작을 확인합니다. Orca 전용 패널·워커 테스트는 위 명령으로 별도 실행합니다.
 
 MIT License. 포함된 의존성의 라이선스는 `vendor/`에 있습니다.
+
+## GitHub 수집기 참고
+
+- [GitHub REST: 본인 계정 알림 조회와 지원 인증](https://docs.github.com/en/rest/activity/notifications#list-notifications-for-the-authenticated-user)
+- [GitHub CLI: API 조회와 페이지 처리](https://cli.github.com/manual/gh_api)
