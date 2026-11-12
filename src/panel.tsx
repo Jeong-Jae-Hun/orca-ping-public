@@ -1,4 +1,4 @@
-import { atom, Badge, Button, Callout, Card, Collapsible, Heading, Input, Link, Markdown, plugin, read, RelativeTime, Row, Select, set, Stack, Tab, Tabs, Text, type PanelContext } from 'orca'
+import { atom, Badge, Box, Button, Callout, Collapsible, Heading, Input, Link, Markdown, plugin, read, RelativeTime, Row, Select, set, Stack, Tab, Tabs, Text, type CardProps, type PanelContext } from 'orca'
 import type { Judgment, Priority, Proposal, Request, SavedTask, Theory, TheoryLesson, View } from './protocol.ts'
 
 const view = atom<View>({ snapshot: null, error: null })
@@ -17,6 +17,7 @@ function formatTime(at: number, timeZone = Intl.DateTimeFormat().resolvedOptions
 }
 const priorityOptions = [{ value: 'auto', label: '자동 판단' }, { value: 'urgent', label: '급함' }, { value: 'today', label: '오늘' }, { value: 'info', label: '참고' }, { value: 'unknown', label: '판단 보류' }]
 const priorityLabels = { urgent: '급함', today: '오늘', info: '참고', unknown: '판단 보류' }
+const priorityTones = { urgent: 'danger', today: 'accent', info: 'neutral', unknown: 'warning' } as const
 
 async function refresh() {
   set(busy, true)
@@ -80,6 +81,16 @@ function splitTitle(title: string, repo?: string, url?: string) {
   const source = github ? `${github[1]} #${github[2]}` : repo?.split('/').at(-1)
   const kind = title.startsWith('리뷰:') ? '리뷰 요청' : title.includes(': ') ? title.split(': ')[0] : '알림'
   return { subject: title, source: source ? `${kind} · ${source}` : undefined }
+}
+
+function TaskCard({ title, description, children }: CardProps) {
+  return <Box gap="md" padding="lg" background="muted" border="neutral" radius="md">
+    <Stack gap="xs">
+      <Heading level={3}><Text size="md" weight="semibold">{title}</Text></Heading>
+      {description && <Text size="sm">{description}</Text>}
+    </Stack>
+    {children}
+  </Box>
 }
 
 function ProgressTask({ task }: { task: SavedTask }) {
@@ -214,14 +225,14 @@ export default function Panel() {
             {actionable.map((item: Judgment) => {
               const proposal = snapshot.proposals.find(proposal => proposal.id === item.id || proposal.title === item.title)
               const { subject, source } = splitTitle(item.title, proposal?.repo, item.url || proposal?.url)
-              return <Card key={item.title} title={subject} description={source}>
+              return <TaskCard key={item.title} title={subject} description={source}>
                 <Stack gap="sm">
-                <Row gap="sm"><Badge>{priorityLabels[item.priority]}</Badge>{item.manualPriority && <Text muted size="xs">내가 지정</Text>}</Row>
+                <Row gap="sm"><Badge tone={priorityTones[item.priority]}>{priorityLabels[item.priority]}</Badge>{item.manualPriority && <Text muted size="xs">내가 지정</Text>}</Row>
                 <Text size="sm">{item.reason}</Text>
                 <Text size="sm">권장 · {item.action}</Text>
                 {item.id ? <TaskActions id={item.id} proposal={proposal} url={item.url} priority={item.manualPriority ? item.priority : undefined} /> : item.url && <Link href={item.url}>근거</Link>}
                 </Stack>
-              </Card>
+              </TaskCard>
             })}
             {judgments.some(item => item.priority === 'info') && <Collapsible title="참고 알림" description={`${judgments.filter(item => item.priority === 'info').length}건`}>
               <Stack gap="md">{judgments.filter(item => item.priority === 'info').map(item => <Stack key={item.title} gap="xs"><Text size="sm">{item.title}</Text><Text muted size="xs">{item.manualPriority ? '내가 지정 · ' : ''}{item.reason}</Text>{item.id ? <TaskActions id={item.id} url={item.url} priority={item.manualPriority ? item.priority : undefined} /> : item.url && <Link href={item.url}>근거</Link>}</Stack>)}</Stack>
@@ -233,7 +244,7 @@ export default function Panel() {
             <Input label="대기 작업 검색" labelHidden type="search" placeholder="제목이나 프로젝트 검색" value={read(query)}
               onChange={value => { set(query, value); set(visible, 8) }} />
             {proposals.length === 0 && <Text muted size="sm">{search ? '검색 결과가 없습니다.' : '대기 중인 일이 없습니다.'}</Text>}
-            {proposals.slice(0, read(visible)).map((proposal: Proposal) => <Card key={proposal.id}
+            {proposals.slice(0, read(visible)).map((proposal: Proposal) => <TaskCard key={proposal.id}
               title={splitTitle(proposal.title).subject}
               description={splitTitle(proposal.title, proposal.repo, proposal.url).source}>
               <Stack gap="sm">
@@ -243,7 +254,7 @@ export default function Panel() {
                 {proposal.manualPriority && <Text muted size="xs">내가 지정 · {priorityLabels[proposal.priority!]}</Text>}
                 <TaskActions id={proposal.id} proposal={proposal} url={proposal.url} priority={proposal.priority} />
               </Stack>
-            </Card>)}
+            </TaskCard>)}
             {proposals.length > read(visible) && <Button size="sm" variant="ghost" onPress={() => set(visible, read(visible) + 8)}>이전 작업 더 보기</Button>}
             {(snapshot.snoozed ?? []).length > 0 && <Collapsible title={`나중에 보기 ${(snapshot.snoozed ?? []).length}건`}>
               <Stack gap="md">{(snapshot.snoozed ?? []).map(reminder => <Stack key={reminder.id} gap="sm">

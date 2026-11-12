@@ -72,7 +72,7 @@ test('급한 판단을 먼저 보이고 이유와 권장 행동을 함께 표시
     { title: '운영 오류', priority: 'urgent', reason: '현재 요청 실패가 계속됩니다.', action: '운영 상태를 확인하세요.', url: 'https://example.com/incident' }
   ] }, error: null } } })
   const view = await mount(panel, { host })
-  assert.deepEqual(view.findAll({ type: 'Card' }).map(card => card.props.title), ['운영 오류', '오늘 답변'])
+  assert.deepEqual(view.findAll({ type: 'Heading' }).slice(1).map(card => card.text), ['운영 오류', '오늘 답변'])
   assert.deepEqual(view.findAll({ type: 'Badge' }).map(badge => badge.text), ['급함', '오늘'])
   assert.equal(view.find({ text: '현재 요청 실패가 계속됩니다.' })?.type, 'Text')
   assert.equal(view.find({ text: '권장 · 운영 상태를 확인하세요.' })?.type, 'Text')
@@ -190,14 +190,31 @@ test('인박스는 작업 제목과 원문 출처를 묶고 보조 입력은 펼
   ] }, error: null } } })
   const view = await mount(panel, { host })
   assert.equal(view.find({ text: 'Ping Inbox' })?.type, 'Heading')
-  const cards = view.findAll({ type: 'Card' })
-  assert.equal(cards[0].props.title, 'docs(server): 엔진 경계')
-  assert.equal(cards[0].props.description, '리뷰 요청 · example/service #42')
+  assert.equal(view.find({ type: 'Heading', text: 'docs(server): 엔진 경계' })?.type, 'Heading')
+  assert.equal(view.find({ type: 'Text', text: '리뷰 요청 · example/service #42' })?.props.muted, undefined)
   assert.equal(view.find({ text: '오늘' })?.type, 'Badge')
   assert.equal(view.find({ text: '세션 시작' })?.disabled, false)
   assert.equal(view.find({ label: '짧은 의견' }), null)
   assert.equal(view.find({ label: '우선순위' }), null)
   assert.equal(view.find({ label: '판단 엔진' }), null)
+  assert.deepEqual(view.errors, [])
+  assert.deepEqual(view.refusals, [])
+  await view.unmount()
+})
+
+
+test('다크 모드에서도 작업은 테마 표면과 테두리로 구분하고 판단 보류는 경고색으로 표시한다', async () => {
+  const host = mockHost({ requests: { 'ping.refresh': { snapshot: { ...snapshot, judgments: [
+    { id: '1234abcd', title: '확인이 필요한 오류', priority: 'unknown', reason: '영향 범위를 확인하지 못했습니다.', action: '관련 로그를 확인하세요.', url: 'https://example.com/issue' },
+  ] }, error: null } } })
+  const view = await mount(panel, { host })
+  await view.select({ type: 'Tabs' }, 'now')
+  const cards = view.findAll({ type: 'Box' })
+  assert.equal(cards.length, 1)
+  assert.equal(cards[0].props.background, 'muted')
+  assert.equal(cards[0].props.border, 'neutral')
+  assert.equal(view.find({ type: 'Heading', text: '확인이 필요한 오류' })?.type, 'Heading')
+  assert.equal(view.find({ type: 'Badge', text: '판단 보류' })?.props.tone, 'warning')
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.refusals, [])
   await view.unmount()
