@@ -72,10 +72,10 @@ test('급한 판단을 먼저 보이고 이유와 권장 행동을 함께 표시
     { title: '운영 오류', priority: 'urgent', reason: '현재 요청 실패가 계속됩니다.', action: '운영 상태를 확인하세요.', url: 'https://example.com/incident' }
   ] }, error: null } } })
   const view = await mount(panel, { host })
-  const titles = view.findAll({ type: 'Text' }).map(item => item.text).filter(text => text.startsWith('급함 ·') || text.startsWith('오늘 ·'))
-  assert.deepEqual(titles, ['급함 · 운영 오류', '오늘 · 오늘 답변'])
+  assert.deepEqual(view.findAll({ type: 'Card' }).map(card => card.props.title), ['운영 오류', '오늘 답변'])
+  assert.deepEqual(view.findAll({ type: 'Badge' }).map(badge => badge.text), ['급함', '오늘'])
   assert.equal(view.find({ text: '현재 요청 실패가 계속됩니다.' })?.type, 'Text')
-  assert.equal(view.find({ text: '권장: 운영 상태를 확인하세요.' })?.type, 'Text')
+  assert.equal(view.find({ text: '권장 · 운영 상태를 확인하세요.' })?.type, 'Text')
   assert.deepEqual(view.errors, [])
   await view.unmount()
 })
