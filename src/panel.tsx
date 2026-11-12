@@ -1,4 +1,4 @@
-import { atom, Button, Collapsible, Heading, Input, Link, Markdown, plugin, read, RelativeTime, Row, Select, set, Stack, Tab, Tabs, Text, type PanelContext } from 'orca'
+import { atom, Badge, Button, Callout, Card, Collapsible, Heading, Input, Link, Markdown, plugin, read, RelativeTime, Row, Select, set, Stack, Tab, Tabs, Text, type PanelContext } from 'orca'
 import type { Judgment, Priority, Proposal, Request, SavedTask, View } from './protocol.ts'
 
 const view = atom<View>({ snapshot: null, error: null })
@@ -15,6 +15,15 @@ function formatTime(at: number, timeZone = Intl.DateTimeFormat().resolvedOptions
 }
 const priorityOptions = [{ value: 'auto', label: '자동 판단' }, { value: 'urgent', label: '급함' }, { value: 'today', label: '오늘' }, { value: 'info', label: '참고' }, { value: 'unknown', label: '판단 보류' }]
 const priorityLabels = { urgent: '급함', today: '오늘', info: '참고', unknown: '판단 보류' }
+const priorityTones = { urgent: 'danger', today: 'accent', info: 'neutral', unknown: 'warning' } as const
+
+/** `리뷰 요청: owner/repo#12 제목` 을 카드 제목과 출처 줄로 나눕니다. 형식이 다르면 제목만 씁니다. */
+function splitTitle(title: string) {
+  const match = /^(?:([^:]+): )?([\w.-]+\/[\w.-]+)#(\d+)\s+([\s\S]+)$/.exec(title)
+  if (!match) return { subject: title, source: undefined }
+  const [, label, repo, number, subject] = match
+  return { subject, source: [label, `${repo} #${number}`].filter(Boolean).join(' · ') }
+}
 
 async function refresh() {
   set(busy, true)
@@ -101,14 +110,16 @@ export default function Panel() {
       <Button size="sm" disabled={pending || collecting || !snapshot || snapshot.collectionAvailable === false} onPress={() => act('collect')}>{collecting ? '수집 중…' : '지금 보고 받기'}</Button>
       <Text muted size="xs">{snapshot?.collectionAvailable === false ? '설정 파일에 수집 명령을 연결하세요. README에서 시작 방법을 확인할 수 있습니다.' : '연결한 수집기로 새 보고 받기'}</Text>
     </Row>
-    {snapshot?.collection && <Text size="sm">{snapshot.collection.message}</Text>}
     {error && <Stack gap="xs"><Text size="sm">연결을 확인한 뒤 화면 갱신을 누르세요.</Text><Text muted size="xs">{error}</Text></Stack>}
     {!snapshot && !error && <Text muted>알림을 가져오고 있습니다.</Text>}
     {snapshot && <Stack gap="md">
-      <Stack gap="xs">
-        <Text size="sm">{reportSummary.length > 220 ? reportSummary.slice(0, 220) + '…' : reportSummary}</Text>
-        {snapshot.updatedAt > 0 && <Row gap="xs"><Text muted size="xs">마지막 보고</Text><RelativeTime at={snapshot.updatedAt} /></Row>}
-      </Stack>
+      <Callout tone="neutral" icon="bell">
+        <Stack gap="xs">
+          {snapshot.collection && <Text size="sm">{snapshot.collection.message}</Text>}
+          <Text size="sm">{reportSummary.length > 220 ? reportSummary.slice(0, 220) + '…' : reportSummary}</Text>
+          {snapshot.updatedAt > 0 && <Row gap="xs"><Text muted size="xs">마지막 보고</Text><RelativeTime at={snapshot.updatedAt} /></Row>}
+        </Stack>
+      </Callout>
       <Collapsible title={snapshot.sourceHealth?.length ? `수집 상태 · 확인 필요 ${unhealthy.length}개` : '수집 상태 · 아직 기록 없음'}>
         <Stack gap="md">
           {!(snapshot.sourceHealth ?? []).length && <Text muted size="sm">아직 소스별 상태 기록이 없습니다.</Text>}
@@ -137,12 +148,18 @@ export default function Panel() {
             {snapshot.judgments && actionable.length === 0 && <Text size="sm">이번 보고에는 바로 처리할 항목이 없습니다.</Text>}
             {actionable.map((item: Judgment) => {
               const proposal = snapshot.proposals.find(proposal => proposal.id === item.id || proposal.title === item.title)
-              return <Stack key={item.title} gap="sm">
-                <Text weight="semibold">{priorityLabels[item.priority]} · {item.title}{item.manualPriority ? ' · 내가 지정' : ''}</Text>
-                <Text size="sm">{item.reason}</Text>
-                <Text size="sm">권장: {item.action}</Text>
-                {item.id ? <TaskActions id={item.id} proposal={proposal} url={item.url} priority={item.manualPriority ? item.priority : undefined} /> : item.url && <Link href={item.url}>근거</Link>}
-              </Stack>
+              const { subject, source } = splitTitle(item.title)
+              return <Card key={item.title} title={subject} description={source}>
+                <Stack gap="sm">
+                  <Row gap="sm" align="center" wrap>
+                    <Badge tone={priorityTones[item.priority]}>{priorityLabels[item.priority]}</Badge>
+                    {item.manualPriority && <Text muted size="xs">내가 지정</Text>}
+                  </Row>
+                  <Text size="sm">{item.reason}</Text>
+                  <Text size="sm">권장 · {item.action}</Text>
+                  {item.id ? <TaskActions id={item.id} proposal={proposal} url={item.url} priority={item.manualPriority ? item.priority : undefined} /> : item.url && <Link href={item.url}>근거</Link>}
+                </Stack>
+              </Card>
             })}
             {judgments.some(item => item.priority === 'info') && <Collapsible title="참고 알림" description={`${judgments.filter(item => item.priority === 'info').length}건`}>
               <Stack gap="md">{judgments.filter(item => item.priority === 'info').map(item => <Stack key={item.title} gap="xs"><Text size="sm">{item.title}</Text><Text muted size="xs">{item.manualPriority ? '내가 지정 · ' : ''}{item.reason}</Text>{item.id ? <TaskActions id={item.id} url={item.url} priority={item.manualPriority ? item.priority : undefined} /> : item.url && <Link href={item.url}>근거</Link>}</Stack>)}</Stack>
