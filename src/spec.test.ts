@@ -186,6 +186,8 @@ test('백로그로 보낸 명세는 진행 목록에서 빠지고 백로그에 �
     setSpecStatus(f.options, f.state, id('자동'), 'active')
     assert.equal(readFileSync(file, 'utf8'), '---\r\nspec: active\r\ntags: [plan]\r\n---\r\n# 자동\r\n\r\n## 구현\r\n\r\no/r#7\r\n')
     assert.deepEqual(specs(f.options, f.state, run, 1000)!.items.map(item => [item.title, item.mode]), [['자동', 'marked']])
+    setSpecStatus(f.options, f.state, id('머리 없음'), 'done')
+    assert.deepEqual(specs(f.options, f.state, run, 1000)!.done?.map(item => item.title), ['머리 없음'])
     assert.throws(() => setSpecStatus(f.options, f.state, '00000000', 'backlog'), /no longer available/)
   } finally { f.close() }
 })

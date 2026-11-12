@@ -45,6 +45,16 @@ async function refresh(runtime: Runtime, input: Request = { action: 'snapshot' }
   try {
     snapshot = await call(input)
     await orca.storage.set('snapshot', snapshot)
+    // SSH 백엔드에서는 세션 열기가 원격 Orca 에서만 일어난다. 같은 경로의 워크스페이스를 이 Orca 화면에서 직접 연다.
+    const target = input.action === 'spec-open' ? snapshot.specs?.items.find(item => item.id === input.id)?.sessions.find(item => item.key === input.key)?.worktree
+      : input.action === 'session-open' ? snapshot.specs?.sessions.find(item => item.key === input.key)?.worktree
+      : input.action === 'reopen' ? snapshot.savedTasks?.find(item => item.id === input.id)?.worktreePath : undefined
+    if (target) {
+      const { workspaces } = await orca.host.call('workspace.list', undefined)
+      const workspace = workspaces.find(item => item.path === target)
+      if (!workspace) throw new Error('Workspace is not visible in this Orca; connect the backend host first')
+      await orca.host.call('workspace.open', { workspaceId: workspace.id })
+    }
     const reminded = (await orca.storage.get('reminded') ?? {}) as Record<string, number>
     const due = (snapshot.reminders ?? []).filter(item => reminded[item.id] !== item.until)
     if (due.length) {
@@ -83,7 +93,7 @@ export default function activate(orca: OrcaWorkerApi, call?: Transport) {
   orca.panels.handle('ping.view', () => runtime.view)
   orca.panels.handle('ping.refresh', () => poll(runtime))
   orca.panels.handle('ping.action', async input => {
-    if (!input || !['start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority', 'theory-read', 'theory-note', 'theory-next', 'theory-preferences', 'theory-explain', 'spec-open', 'spec-status', 'session-open'].includes(input.action) || ((input.action === 'spec-open' || input.action === 'session-open') && !/^[\w:./-]{1,300}$/.test(input.key ?? '')) || (input.action === 'spec-status' && input.text !== 'backlog' && input.text !== 'active') || (!['collect', 'theory-preferences', 'session-open'].includes(input.action) && !(input.action.startsWith('theory-') ? /^[a-z0-9][a-z0-9-]{0,79}$/ : /^[a-f0-9]{8}$/).test(input.id ?? ''))) throw new Error('Invalid action')
+    if (!input || !['start', 'dismiss', 'collect', 'reopen', 'complete', 'snooze', 'unsnooze', 'priority', 'theory-read', 'theory-note', 'theory-next', 'theory-preferences', 'theory-explain', 'spec-open', 'spec-status', 'session-open'].includes(input.action) || ((input.action === 'spec-open' || input.action === 'session-open') && !/^[\w:./-]{1,300}$/.test(input.key ?? '')) || (input.action === 'spec-status' && !['backlog', 'active', 'done'].includes(input.text ?? '')) || (!['collect', 'theory-preferences', 'session-open'].includes(input.action) && !(input.action.startsWith('theory-') ? /^[a-z0-9][a-z0-9-]{0,79}$/ : /^[a-f0-9]{8}$/).test(input.id ?? ''))) throw new Error('Invalid action')
     if (runtime.pending) await runtime.pending
     runtime.pending = refresh(runtime, input).finally(() => { runtime.pending = null })
     return runtime.pending

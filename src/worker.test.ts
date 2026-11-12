@@ -88,3 +88,24 @@ test('캐시 조회는 수집 요청이나 변경 이벤트를 다시 만들지 
   assert.equal(calls, before)
   await worker.deactivate()
 })
+
+test('세션 열기는 백엔드 응답 뒤 같은 경로의 워크스페이스를 이 Orca 에서 연다', async () => {
+  const session = { key: 'claude_1', title: '구현', state: 'working', worktree: '/w/app', updatedAt: 1 }
+  const opened: Snapshot = { ...snapshot, specs: { items: [], backlog: [], sessions: [session], checkedAt: 1 } }
+  const host = mockHost({ results: { 'statusBar.update': { ok: true }, 'workspace.list': { workspaces: [{ id: 'other', kind: 'worktree', name: 'x', path: '/w/x', branch: null, hostId: 'h' }, { id: 'ws-app', kind: 'worktree', name: 'app', path: '/w/app', branch: 'feat/a', hostId: 'h' }], truncated: false }, 'workspace.open': { opened: true } } })
+  const worker = await mountWorker({ default: orca => activate(orca, async () => opened), deactivate }, { host })
+  const result = await worker.request('ping.action', { action: 'session-open', key: 'claude_1' }) as { error: string | null }
+  assert.equal(result.error, null)
+  assert.deepEqual(host.callsOf('workspace.open'), [{ workspaceId: 'ws-app' }])
+  await worker.deactivate()
+})
+
+test('이 Orca 에 워크스페이스가 없으면 열기 실패를 알린다', async () => {
+  const opened: Snapshot = { ...snapshot, specs: { items: [], backlog: [], sessions: [{ key: 'claude_1', title: '구현', state: 'working', worktree: '/w/app', updatedAt: 1 }], checkedAt: 1 } }
+  const host = mockHost({ results: { 'statusBar.update': { ok: true }, 'workspace.list': { workspaces: [], truncated: false } } })
+  const worker = await mountWorker({ default: orca => activate(orca, async () => opened), deactivate }, { host })
+  const result = await worker.request('ping.action', { action: 'session-open', key: 'claude_1' }) as { error: string | null }
+  assert.match(result.error ?? '', /not visible/)
+  assert.equal(host.callsOf('workspace.open').length, 0)
+  await worker.deactivate()
+})

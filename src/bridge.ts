@@ -151,7 +151,7 @@ export function bridge(input: Request, state = defaultState(), home = homedir(),
   const reminders = [...records].flatMap(([id, record]) => record.status === 'snoozed' && record.until ? [{ id, title: record.title, url: record.url ?? '', until: record.until }] : [])
   const specOptions: SpecOptions = { ...settings.specs, orca: settings.orcaExecutable }
   if (input.action === 'spec-status') {
-    if (typeof input.id !== 'string' || !/^[a-f0-9]{8}$/.test(input.id) || (input.text !== 'backlog' && input.text !== 'active')) throw new Error('Invalid spec status')
+    if (typeof input.id !== 'string' || !/^[a-f0-9]{8}$/.test(input.id) || (input.text !== 'backlog' && input.text !== 'active' && input.text !== 'done')) throw new Error('Invalid spec status')
     setSpecStatus(specOptions, state, input.id, input.text, specRun)
   }
   let tracking: Snapshot['specs']

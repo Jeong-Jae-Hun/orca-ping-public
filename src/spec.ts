@@ -187,7 +187,7 @@ function catalog(options: SpecOptions, state: string, run: Run) {
 
 // 패널의 백로그·다시 진행. 내 명세 폴더 문서는 frontmatter 의 spec 한 줄만 바꾼다(편집기에서도 보인다).
 // 레포 문서는 팀이 공유하는 파일이라 고치지 않고 상태 파일에 남긴다.
-export function setSpecStatus(options: SpecOptions, state: string, id: string, status: 'backlog' | 'active', run: Run = execute) {
+export function setSpecStatus(options: SpecOptions, state: string, id: string, status: 'backlog' | 'active' | 'done', run: Run = execute) {
   const found = catalog(options, state, run)
   if (!found) throw new Error('Spec tracking is not enabled')
   const doc = found.docs.find(item => idOf(item) === id)
@@ -206,12 +206,18 @@ export function setSpecStatus(options: SpecOptions, state: string, id: string, s
   writeFileSync(doc.file + '.spec.tmp', updated); renameSync(doc.file + '.spec.tmp', doc.file)
 }
 
+// 진행 목록에서 내린 명세(백로그·완료). 최근에 고친 것부터 상한까지만 보인다.
+function shelf(docs: Document[], mode: Document['mode']) {
+  return docs.filter(doc => doc.mode === mode).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limits.backlog)
+    .map(doc => ({ id: idOf(doc), title: doc.title, project: doc.project, path: doc.path }))
+}
+
 export function specs(options: SpecOptions, state: string, run: Run = execute, now = Date.now()): Specs | undefined {
   const found = catalog(options, state, run)
   if (!found) return undefined
   const { docs, worktrees, error } = found
-  const backlog = docs.filter(doc => doc.mode === 'backlog').sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limits.backlog)
-    .map(doc => ({ id: idOf(doc), title: doc.title, project: doc.project, path: doc.path }))
+  const backlog = shelf(docs, 'backlog')
+  const done = shelf(docs, 'done')
   const all = docs.filter(doc => doc.mode === 'active' || doc.mode === 'auto')
   const live = new Set(worktrees.flatMap(item => item.linkedPR ? [`${item.repo}#${item.linkedPR.number}`] : []))
   // 열린 PR 목록은 gh 가 같이 가져오므로, 미리 아는 후보(표시한 명세·세션이 붙은 명세)의 PR 만 넘긴다.
@@ -242,5 +248,5 @@ export function specs(options: SpecOptions, state: string, run: Run = execute, n
   // 명세에 안 붙은 활동 세션도 보여 준다. 명세를 쓰기 전 단계의 일도 한곳에서 찾게 한다.
   const linkedKeys = new Set(items.flatMap(item => item.sessions.map(session => session.key)))
   const loose = worktrees.flatMap(sessionsIn).filter(session => !linkedKeys.has(session.key)).sort((a, b) => b.updatedAt - a.updatedAt)
-  return { items, backlog, sessions: loose, checkedAt: settled.cache.at || now, error: error ?? settled.error ?? fetched.error }
+  return { items, backlog, done, sessions: loose, checkedAt: settled.cache.at || now, error: error ?? settled.error ?? fetched.error }
 }
